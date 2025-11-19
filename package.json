@@ -1,0 +1,22 @@
+{
+  "name": "url-redirect",
+  "version": "1.0.0",
+  "description": "URL redirect system with web admin panel",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "docker:build": "docker build -t url-redirect .",
+    "docker:run": "docker run -p 3000:3000 -v $(pwd)/data:/app/data url-redirect"
+  },
+  "keywords": [
+    "url-redirect",
+    "docker",
+    "express"
+  ],
+  "author": "",
+  "license": "MIT",
+  "dependencies": {
+    "express": "^4.18.2",
+    "express-session": "^1.18.2"
+  }
+}
