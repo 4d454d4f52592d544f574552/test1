@@ -398,6 +398,27 @@ tmux attach-session -t tunnel-1
 - Configure the route as described above
 - The tunnel will connect once the route is properly configured
 
+**If Tunnel Shows "Unauthorized: Failed to get tunnel":**
+- This means the tunnel token is invalid or expired
+- **Solution:**
+  1. Go to Cloudflare Dashboard → Networks → Tunnels
+  2. Find your tunnel
+  3. Click "Configure" → "Edit" (or create a new tunnel)
+  4. Copy a fresh token
+  5. In your admin panel, edit the tunnel and paste the new token
+  6. Stop and restart the tunnel
+
+**Important Notes:**
+- ✅ **"service URL is not valid" in Cloudflare Dashboard = NORMAL** - Ignore it and click Save anyway!
+- ✅ **Service working on localhost:3001 = GOOD** - Your service is running correctly
+- ❌ **"Unauthorized: Failed to get tunnel" = BAD** - Need to fix the tunnel token
+
+**Verification Steps:**
+1. Check service is running: `curl http://localhost:3001/test` (should redirect)
+2. Check tunnel is running: `tmux list-sessions` (should show tunnel-1, tunnel-2, etc.)
+3. Check tunnel logs: `tmux attach-session -t tunnel-1` (look for errors)
+4. If you see "Unauthorized", update the tunnel token in admin panel
+
 ---
 
 ## Useful Commands

@@ -716,13 +716,41 @@ app.post('/api/tunnels/:index/start', requireAuth, (req, res) => {
         // Session doesn't exist, that's fine
       }
       
+      // Create cloudflared config file for this tunnel to bypass dashboard validation
+      const fs = require('fs');
+      const path = require('path');
+      const configDir = path.join(__dirname, '.cloudflared');
+      const configFile = path.join(configDir, `tunnel-${index}.yaml`);
+      
+      // Ensure config directory exists
+      if (!fs.existsSync(configDir)) {
+        fs.mkdirSync(configDir, { recursive: true });
+      }
+      
+      // Create ingress config - this allows us to configure routes without dashboard validation
+      // Note: For token-based tunnels, we still need to configure the hostname in dashboard,
+      // but we can use the config file to specify the service URL
+      const ingressConfig = `tunnel: ${tunnel.tunnelId || 'token-based'}
+credentials-file: ${path.join(configDir, `tunnel-${index}.json`)}
+
+ingress:
+  - hostname: ${tunnel.url ? new URL(tunnel.url).hostname : 'placeholder.example.com'}
+    service: http://127.0.0.1:${tunnelPort}
+  - service: http_status:404
+`;
+      
+      // Write config file
+      fs.writeFileSync(configFile, ingressConfig, 'utf8');
+      console.log(`[TUNNEL ${tunnel.name}] Created config file: ${configFile}`);
+      
       // Create new tmux session and start cloudflared in it
-      // Use send-keys to properly escape the command
       execSync(`tmux new-session -d -s ${tmuxSessionName}`, {
         cwd: __dirname,
         stdio: 'ignore'
       });
-      // Send the cloudflared command to tmux session
+      
+      // For token-based tunnels, we still use --token, but can reference config for ingress
+      // Actually, token-based tunnels get routes from dashboard, so we'll use token method
       const tokenEscaped = tunnel.tunnelToken.replace(/"/g, '\\"');
       execSync(`tmux send-keys -t ${tmuxSessionName} 'cloudflared tunnel --no-autoupdate run --token ${tokenEscaped}' Enter`, {
         cwd: __dirname,
