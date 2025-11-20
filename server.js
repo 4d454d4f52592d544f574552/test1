@@ -1623,39 +1623,53 @@ app.post('/api/tunnels/:index/configure-route', requireAuth, async (req, res) =>
       }
     };
     
-    // Get existing config
-    const existingConfig = await new Promise((resolve, reject) => {
-      const req = https.request(getConfigOptions, (res) => {
-        let data = '';
-        res.on('data', (chunk) => { data += chunk; });
-        res.on('end', () => {
-          try {
-            const parsed = JSON.parse(data);
-            if (!parsed.success) {
-              console.error(`[TUNNEL ${tunnel.name}] Cloudflare API error:`, parsed.errors);
-              reject(new Error(parsed.errors?.[0]?.message || 'Cloudflare API returned error'));
-              return;
+    // Get existing config (or create new one if it doesn't exist)
+    let existingConfig;
+    try {
+      existingConfig = await new Promise((resolve, reject) => {
+        const req = https.request(getConfigOptions, (res) => {
+          let data = '';
+          res.on('data', (chunk) => { data += chunk; });
+          res.on('end', () => {
+            try {
+              const parsed = JSON.parse(data);
+              if (!parsed.success) {
+                // If config doesn't exist, that's okay - we'll create it
+                if (parsed.errors?.[0]?.message?.includes('not found') || 
+                    parsed.errors?.[0]?.code === 1003) {
+                  console.log(`[TUNNEL ${tunnel.name}] Configuration not found, will create new one`);
+                  resolve(null); // Return null to indicate no existing config
+                  return;
+                }
+                console.error(`[TUNNEL ${tunnel.name}] Cloudflare API error:`, parsed.errors);
+                reject(new Error(parsed.errors?.[0]?.message || 'Cloudflare API returned error'));
+                return;
+              }
+              resolve(parsed);
+            } catch (e) {
+              console.error(`[TUNNEL ${tunnel.name}] Failed to parse API response:`, data);
+              reject(e);
             }
-            resolve(parsed);
-          } catch (e) {
-            console.error(`[TUNNEL ${tunnel.name}] Failed to parse API response:`, data);
-            reject(e);
-          }
+          });
         });
+        req.on('error', (error) => {
+          console.error(`[TUNNEL ${tunnel.name}] Request error:`, error);
+          reject(error);
+        });
+        req.end();
       });
-      req.on('error', (error) => {
-        console.error(`[TUNNEL ${tunnel.name}] Request error:`, error);
-        reject(error);
-      });
-      req.end();
-    });
+    } catch (error) {
+      // If we get an error, assume config doesn't exist
+      console.log(`[TUNNEL ${tunnel.name}] Error getting config, assuming it doesn't exist:`, error.message);
+      existingConfig = null;
+    }
     
     // Parse hostname
     const [subdomain, ...domainParts] = hostname.split('.');
     const domain = domainParts.join('.');
     
-    // Build new ingress config
-    const config = existingConfig.result?.config || { ingress: [] };
+    // Build new ingress config (start fresh if no existing config)
+    const config = existingConfig?.result?.config || { ingress: [] };
     const ingress = config.ingress || [];
     
     // Remove existing route for this hostname if it exists
