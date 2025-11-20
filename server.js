@@ -1534,12 +1534,54 @@ app.post('/api/tunnels/:index/configure-route', requireAuth, async (req, res) =>
     console.log(`[TUNNEL ${tunnel.name}] Could not decode tunnel ID from token: ${e.message}, will use API lookup`);
   }
   
-  // Method 2: If decoding failed, get tunnel ID from Cloudflare API
-  if (!tunnelId) {
-    try {
-      const https = require('https');
+  // Method 2: Verify tunnel exists and get correct ID from Cloudflare API
+  // Always verify the tunnel exists, even if we extracted an ID from the token
+  try {
+    const https = require('https');
+    
+    // First, try to verify the extracted tunnel ID exists
+    if (tunnelId) {
+      const verifyOptions = {
+        hostname: 'api.cloudflare.com',
+        path: `/client/v4/accounts/${accountId}/cfd_tunnel/${tunnelId}`,
+        method: 'GET',
+        headers: {
+          'Authorization': `Bearer ${cloudflareApiToken}`,
+          'Content-Type': 'application/json'
+        }
+      };
       
-      // List all tunnels to find the one matching our token
+      try {
+        const verifyResult = await new Promise((resolve, reject) => {
+          const req = https.request(verifyOptions, (res) => {
+            let data = '';
+            res.on('data', (chunk) => { data += chunk; });
+            res.on('end', () => {
+              try {
+                resolve({ statusCode: res.statusCode, data: JSON.parse(data) });
+              } catch (e) {
+                reject(e);
+              }
+            });
+          });
+          req.on('error', reject);
+          req.end();
+        });
+        
+        if (verifyResult.statusCode === 200 && verifyResult.data.success) {
+          console.log(`[TUNNEL ${tunnel.name}] ✅ Verified tunnel ID: ${tunnelId}`);
+        } else {
+          console.log(`[TUNNEL ${tunnel.name}] ⚠️ Extracted tunnel ID ${tunnelId} not found, will list tunnels`);
+          tunnelId = null; // Reset to null so we can find the correct one
+        }
+      } catch (e) {
+        console.log(`[TUNNEL ${tunnel.name}] ⚠️ Could not verify tunnel ID, will list tunnels: ${e.message}`);
+        tunnelId = null;
+      }
+    }
+    
+    // If we don't have a valid tunnel ID, list all tunnels to find the correct one
+    if (!tunnelId) {
       const listOptions = {
         hostname: 'api.cloudflare.com',
         path: `/client/v4/accounts/${accountId}/cfd_tunnel`,
@@ -1556,7 +1598,7 @@ app.post('/api/tunnels/:index/configure-route', requireAuth, async (req, res) =>
           res.on('data', (chunk) => { data += chunk; });
           res.on('end', () => {
             try {
-              resolve(JSON.parse(data));
+              resolve({ statusCode: res.statusCode, data: JSON.parse(data) });
             } catch (e) {
               reject(e);
             }
@@ -1566,22 +1608,22 @@ app.post('/api/tunnels/:index/configure-route', requireAuth, async (req, res) =>
         req.end();
       });
       
-      if (tunnelList.success && tunnelList.result && tunnelList.result.length > 0) {
-        // For token-based tunnels, we might need to match by name or use the first one
-        // Actually, with token-based tunnels, the token itself identifies the tunnel
-        // Let's try using the first tunnel or matching by name
-        const matchingTunnel = tunnelList.result.find(t => 
+      if (tunnelList.statusCode === 200 && tunnelList.data.success && tunnelList.data.result && tunnelList.data.result.length > 0) {
+        // Try to match by name first, then use the first tunnel
+        const matchingTunnel = tunnelList.data.result.find(t => 
           t.name && tunnel.name && t.name.toLowerCase().includes(tunnel.name.toLowerCase())
-        ) || tunnelList.result[0];
+        ) || tunnelList.data.result[0];
         
         if (matchingTunnel) {
           tunnelId = matchingTunnel.id;
-          console.log(`[TUNNEL ${tunnel.name}] Found tunnel ID via API: ${tunnelId}`);
+          console.log(`[TUNNEL ${tunnel.name}] ✅ Found tunnel ID via API listing: ${tunnelId} (name: ${matchingTunnel.name})`);
         }
+      } else {
+        console.error(`[TUNNEL ${tunnel.name}] ❌ Could not list tunnels:`, tunnelList.data);
       }
-    } catch (e) {
-      console.error(`[TUNNEL ${tunnel.name}] Failed to get tunnel ID from API:`, e.message);
     }
+  } catch (e) {
+    console.error(`[TUNNEL ${tunnel.name}] Failed to verify/get tunnel ID from API:`, e.message);
   }
   
   if (!tunnelId) {
