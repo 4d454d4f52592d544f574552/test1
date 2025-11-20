@@ -844,24 +844,18 @@
               <strong>Redirects to:</strong> <span style="color: ${tunnel.redirectUrl ? '#28a745' : '#dc3545'}">${escapeHtml(tunnel.redirectUrl || 'Not configured')}</span>
             </div>
             ${tunnel.port && tunnel.hasToken ? `<div style="font-size: 11px; color: #856404; margin-top: 5px; background: #fff3cd; padding: 8px; border-radius: 4px; border-left: 3px solid #ffc107;">
-              <strong>⚠️ Cloudflare Config Steps (CRITICAL - Dashboard Blocks Saving):</strong><br>
-              <strong style="color: #dc3545;">PROBLEM:</strong> Cloudflare Dashboard won't let you save if validation fails!<br><br>
-              <strong>SOLUTION - Try these in order:</strong><br>
-              <strong>Option 1: Use 127.0.0.1 instead of localhost</strong><br>
-              &nbsp;&nbsp;1. Click "Start" button above to start the tunnel<br>
-              &nbsp;&nbsp;2. Wait 10-15 seconds for tunnel to connect<br>
-              &nbsp;&nbsp;3. Go to Cloudflare Dashboard → Networks → Tunnels → Your Tunnel → Configure → Add Public Hostname<br>
-              &nbsp;&nbsp;4. Service Type: <strong>HTTP</strong> (NOT HTTPS!)<br>
-              &nbsp;&nbsp;5. Service URL: <code style="background: #e8f5e9; padding: 2px 4px; font-weight: bold;">http://127.0.0.1:${tunnel.port}</code> (use 127.0.0.1 instead of localhost!)<br>
-              &nbsp;&nbsp;6. Click Save - this sometimes works when localhost doesn't!<br><br>
-              <strong>Option 2: Configure via Cloudflare API (if Option 1 fails)</strong><br>
-              &nbsp;&nbsp;You can use Cloudflare API to configure routes programmatically, bypassing dashboard validation.<br>
-              &nbsp;&nbsp;See: <a href="https://developers.cloudflare.com/cloudflare-one/connections/connect-apps/install-and-setup/tunnel-useful-commands/#configure-routes-via-api" target="_blank" style="color: #667eea;">Cloudflare API Documentation</a><br><br>
-              <strong>Option 3: Use cloudflared CLI with config file</strong><br>
-              &nbsp;&nbsp;Configure routes using cloudflared config file instead of dashboard.<br>
-              &nbsp;&nbsp;Config file location: <code>~/.cloudflared/tunnel-${tunnel.index || 'X'}.yaml</code><br><br>
-              <strong style="color: #dc3545;">❌ DO NOT USE:</strong> <code style="background: #ffebee; padding: 2px 4px;">http://54.206.76.17:${tunnel.port}</code> (public IP - WRONG!)<br>
-              <strong style="color: #dc3545;">❌ DO NOT USE:</strong> <code style="background: #ffebee; padding: 2px 4px;">https://localhost:${tunnel.port}</code> (HTTPS - WRONG!)<br>
+              <strong>⚠️ Cloudflare Route Configuration (Dashboard Blocks Saving):</strong><br>
+              <strong style="color: #dc3545;">PROBLEM:</strong> Cloudflare Dashboard won't let you save localhost URLs!<br><br>
+              <strong style="color: #28a745;">✅ SOLUTION: Configure via API (Automatic)</strong><br>
+              <button onclick="showRouteConfigDialog(${tunnel.index || 0}, '${tunnel.port}', '${tunnel.name}')" style="background: #28a745; color: white; border: none; padding: 6px 12px; border-radius: 4px; cursor: pointer; font-size: 11px; margin-top: 5px;">
+                🔧 Configure Route via API
+              </button><br><br>
+              <strong>Or manually:</strong><br>
+              1. Get Cloudflare API Token: Dashboard → My Profile → API Tokens → Create Token<br>
+              2. Get Account ID: Dashboard → Right sidebar (under your account name)<br>
+              3. Click button above and fill in the form<br>
+              4. Route will be configured automatically, bypassing dashboard validation!<br><br>
+              <strong style="color: #dc3545;">❌ DO NOT USE Dashboard - it blocks localhost/127.0.0.1!</strong>
             </div>` : ''}
             ${tunnel.notes ? `<div style="font-size: 11px; color: #856404; margin-top: 5px; font-style: italic; background: #fff3cd; padding: 8px; border-radius: 4px;">📝 ${escapeHtml(tunnel.notes)}</div>` : ''}
             <div style="font-size: 11px; color: #667eea; margin-top: 8px; font-weight: 600;">
@@ -1206,6 +1200,101 @@
         console.error('Error updating info tab:', error);
       }
     }
+    
+    // Show route configuration dialog
+    window.showRouteConfigDialog = function(tunnelIndex, port, tunnelName) {
+      const dialog = document.createElement('div');
+      dialog.className = 'modal';
+      dialog.style.display = 'block';
+      dialog.innerHTML = `
+        <div class="modal-content" style="max-width: 600px;">
+          <div class="modal-header">
+            <h2>Configure Route via Cloudflare API</h2>
+            <span class="close" onclick="this.closest('.modal').remove()">&times;</span>
+          </div>
+          <div class="modal-body">
+            <p style="font-size: 12px; color: #666; margin-bottom: 15px;">
+              This bypasses Cloudflare Dashboard validation. You need your Cloudflare API Token and Account ID.
+            </p>
+            <div class="form-group">
+              <label for="routeHostname">Hostname (Required)</label>
+              <input type="text" id="routeHostname" placeholder="cnt-0001-test4.stratus-labs.org" style="width: 100%; padding: 12px; border: 1px solid #ddd; border-radius: 4px; font-size: 14px;" />
+              <p style="font-size: 11px; color: #666; margin-top: 5px;">Full hostname including domain (e.g., subdomain.stratus-labs.org)</p>
+            </div>
+            <div class="form-group">
+              <label for="routeApiToken">Cloudflare API Token (Required)</label>
+              <input type="password" id="routeApiToken" placeholder="Your Cloudflare API Token" style="width: 100%; padding: 12px; border: 1px solid #ddd; border-radius: 4px; font-size: 14px;" />
+              <p style="font-size: 11px; color: #666; margin-top: 5px;">
+                Get from: <a href="https://dash.cloudflare.com/profile/api-tokens" target="_blank" style="color: #667eea;">Cloudflare Dashboard → My Profile → API Tokens</a><br>
+                Create token with permissions: <strong>Cloudflare Tunnel:Edit</strong>
+              </p>
+            </div>
+            <div class="form-group">
+              <label for="routeAccountId">Account ID (Required)</label>
+              <input type="text" id="routeAccountId" placeholder="Your Cloudflare Account ID" style="width: 100%; padding: 12px; border: 1px solid #ddd; border-radius: 4px; font-size: 14px;" />
+              <p style="font-size: 11px; color: #666; margin-top: 5px;">
+                Get from: Cloudflare Dashboard → Right sidebar (under your account name)
+              </p>
+            </div>
+            <div style="background: #e7f3ff; padding: 10px; border-radius: 4px; margin: 15px 0; font-size: 12px;">
+              <strong>Service URL:</strong> <code>http://127.0.0.1:${port}</code> (will be configured automatically)
+            </div>
+            <div style="display: flex; gap: 10px; margin-top: 20px;">
+              <button onclick="configureRouteViaAPI(${tunnelIndex}, ${port})" class="btn-primary" style="flex: 1; background: #28a745; border-color: #28a745;">
+                Configure Route
+              </button>
+              <button onclick="this.closest('.modal').remove()" class="btn-secondary" style="flex: 1;">
+                Cancel
+              </button>
+            </div>
+          </div>
+        </div>
+      `;
+      document.body.appendChild(dialog);
+    };
+    
+    // Configure route via API
+    window.configureRouteViaAPI = async function(tunnelIndex, port) {
+      const hostname = document.getElementById('routeHostname').value.trim();
+      const apiToken = document.getElementById('routeApiToken').value.trim();
+      const accountId = document.getElementById('routeAccountId').value.trim();
+      
+      if (!hostname) {
+        showStatus('Please enter hostname', 'error');
+        return;
+      }
+      if (!apiToken) {
+        showStatus('Please enter Cloudflare API Token', 'error');
+        return;
+      }
+      if (!accountId) {
+        showStatus('Please enter Account ID', 'error');
+        return;
+      }
+      
+      showStatus('Configuring route via API...', 'success');
+      
+      try {
+        const result = await apiCall('POST', `/api/tunnels/${tunnelIndex}/configure-route`, {
+          hostname: hostname,
+          cloudflareApiToken: apiToken,
+          accountId: accountId
+        });
+        
+        if (result.success) {
+          showStatus(`Route configured successfully: ${hostname} -> http://127.0.0.1:${port}`, 'success');
+          document.querySelector('.modal').remove();
+          // Reload tunnels to update status
+          setTimeout(() => {
+            loadTunnels();
+          }, 2000);
+        } else {
+          showStatus('Error: ' + (result.error || result.details || 'Failed to configure route'), 'error');
+        }
+      } catch (error) {
+        showStatus('Error configuring route: ' + error.message, 'error');
+      }
+    };
   </script>
 </body>
 </html>

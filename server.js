@@ -1486,6 +1486,160 @@ app.delete('/api/tunnels/:index', requireAuth, (req, res) => {
   }
 });
 
+// API endpoint to configure Cloudflare route via API (bypasses dashboard validation)
+app.post('/api/tunnels/:index/configure-route', requireAuth, async (req, res) => {
+  const index = parseInt(req.params.index);
+  const tunnels = getTunnels();
+  
+  if (index < 0 || index >= tunnels.length) {
+    return res.status(400).json({ error: 'Invalid tunnel index' });
+  }
+  
+  const tunnel = tunnels[index];
+  const { hostname, cloudflareApiToken, accountId } = req.body;
+  
+  if (!hostname) {
+    return res.status(400).json({ error: 'hostname is required (e.g., cnt-0001-test4.stratus-labs.org)' });
+  }
+  
+  if (!cloudflareApiToken) {
+    return res.status(400).json({ error: 'cloudflareApiToken is required. Get it from Cloudflare Dashboard → My Profile → API Tokens' });
+  }
+  
+  if (!accountId) {
+    return res.status(400).json({ error: 'accountId is required. Get it from Cloudflare Dashboard → Right sidebar → Account ID' });
+  }
+  
+  // Decode tunnel token to get tunnel ID
+  let tunnelId = null;
+  try {
+    const tokenParts = tunnel.tunnelToken.split('.');
+    if (tokenParts.length === 3) {
+      const payload = JSON.parse(Buffer.from(tokenParts[1], 'base64').toString());
+      tunnelId = payload.t; // Tunnel ID is in 't' field
+    }
+  } catch (e) {
+    console.error('Failed to decode tunnel token:', e);
+  }
+  
+  if (!tunnelId) {
+    return res.status(400).json({ error: 'Could not extract tunnel ID from token. Make sure tunnel token is valid.' });
+  }
+  
+  const tunnelPort = tunnel.port || 3000;
+  const serviceUrl = `http://127.0.0.1:${tunnelPort}`;
+  
+  try {
+    const https = require('https');
+    const http = require('http');
+    
+    // Get tunnel configuration first
+    const getConfigUrl = `https://api.cloudflare.com/client/v4/accounts/${accountId}/cfd_tunnel/${tunnelId}/configurations`;
+    
+    const getConfigOptions = {
+      hostname: 'api.cloudflare.com',
+      path: `/client/v4/accounts/${accountId}/cfd_tunnel/${tunnelId}/configurations`,
+      method: 'GET',
+      headers: {
+        'Authorization': `Bearer ${cloudflareApiToken}`,
+        'Content-Type': 'application/json'
+      }
+    };
+    
+    // Get existing config
+    const existingConfig = await new Promise((resolve, reject) => {
+      const req = https.request(getConfigOptions, (res) => {
+        let data = '';
+        res.on('data', (chunk) => { data += chunk; });
+        res.on('end', () => {
+          try {
+            resolve(JSON.parse(data));
+          } catch (e) {
+            reject(e);
+          }
+        });
+      });
+      req.on('error', reject);
+      req.end();
+    });
+    
+    // Parse hostname
+    const [subdomain, ...domainParts] = hostname.split('.');
+    const domain = domainParts.join('.');
+    
+    // Build new ingress config
+    const config = existingConfig.result?.config || { ingress: [] };
+    const ingress = config.ingress || [];
+    
+    // Remove existing route for this hostname if it exists
+    const filteredIngress = ingress.filter(rule => rule.hostname !== hostname);
+    
+    // Add new route at the beginning (most specific first)
+    const newRoute = {
+      hostname: hostname,
+      service: serviceUrl
+    };
+    
+    filteredIngress.unshift(newRoute);
+    
+    // Add catch-all at the end if not present
+    if (!filteredIngress.some(rule => rule.service === 'http_status:404')) {
+      filteredIngress.push({ service: 'http_status:404' });
+    }
+    
+    config.ingress = filteredIngress;
+    
+    // Update tunnel configuration
+    const updateOptions = {
+      hostname: 'api.cloudflare.com',
+      path: `/client/v4/accounts/${accountId}/cfd_tunnel/${tunnelId}/configurations`,
+      method: 'PUT',
+      headers: {
+        'Authorization': `Bearer ${cloudflareApiToken}`,
+        'Content-Type': 'application/json'
+      }
+    };
+    
+    const updateResult = await new Promise((resolve, reject) => {
+      const req = https.request(updateOptions, (res) => {
+        let data = '';
+        res.on('data', (chunk) => { data += chunk; });
+        res.on('end', () => {
+          try {
+            resolve(JSON.parse(data));
+          } catch (e) {
+            reject(e);
+          }
+        });
+      });
+      req.on('error', reject);
+      req.write(JSON.stringify({ config }));
+      req.end();
+    });
+    
+    if (updateResult.success) {
+      console.log(`[TUNNEL ${tunnel.name}] ✅ Route configured via API: ${hostname} -> ${serviceUrl}`);
+      res.json({
+        success: true,
+        message: `Route configured successfully: ${hostname} -> ${serviceUrl}`,
+        hostname: hostname,
+        serviceUrl: serviceUrl
+      });
+    } else {
+      res.status(500).json({
+        error: 'Failed to configure route',
+        details: updateResult.errors || updateResult
+      });
+    }
+  } catch (error) {
+    console.error(`[TUNNEL ${tunnel.name}] ❌ Failed to configure route via API:`, error);
+    res.status(500).json({
+      error: 'Failed to configure route via API',
+      details: error.message
+    });
+  }
+});
+
 // Serve login page
 app.get('/login', (req, res) => {
   // If already authenticated, redirect to admin
