@@ -846,11 +846,16 @@
             ${tunnel.port && tunnel.hasToken ? `<div style="font-size: 11px; color: #856404; margin-top: 5px; background: #fff3cd; padding: 8px; border-radius: 4px; border-left: 3px solid #ffc107;">
               <strong>⚠️ Cloudflare Config Steps (CRITICAL - Follow Exactly):</strong><br>
               1. <strong>FIRST:</strong> Click "Start" button above to start the tunnel<br>
-              2. Wait 10-15 seconds for tunnel to connect (check tmux: <code>tmux attach -t tunnel-${tunnel.index || 'X'}</code>)<br>
+              2. Wait 10-15 seconds for tunnel to connect<br>
               3. Go to Cloudflare Dashboard → Networks → Tunnels → Your Tunnel → Configure → Add Public Hostname<br>
               4. <strong style="color: #dc3545;">Service Type: MUST be HTTP (NOT HTTPS!)</strong><br>
-              5. <strong style="color: #dc3545;">Service URL: MUST be <code style="background: white; padding: 2px 4px; border-radius: 2px;">http://localhost:${tunnel.port}</code> (NOT https://, NOT public IP!)</strong><br>
-              6. <strong>Common Error:</strong> If you see "tls: first record does not look like a TLS handshake" - you set Service Type to HTTPS instead of HTTP!<br>
+              5. <strong style="color: #dc3545; font-size: 12px;">Service URL: MUST be <code style="background: white; padding: 2px 4px; border-radius: 2px; font-weight: bold;">http://localhost:${tunnel.port}</code></strong><br>
+              <strong style="color: #dc3545;">❌ DO NOT USE:</strong> <code style="background: #ffebee; padding: 2px 4px;">http://54.206.76.17:${tunnel.port}</code> (public IP - WRONG!)<br>
+              <strong style="color: #dc3545;">❌ DO NOT USE:</strong> <code style="background: #ffebee; padding: 2px 4px;">https://localhost:${tunnel.port}</code> (HTTPS - WRONG!)<br>
+              <strong style="color: #28a745;">✅ USE:</strong> <code style="background: #e8f5e9; padding: 2px 4px; font-weight: bold;">http://localhost:${tunnel.port}</code> (localhost with HTTP - CORRECT!)<br>
+              6. <strong>Common Errors:</strong><br>
+              &nbsp;&nbsp;- "tls: first record does not look like a TLS handshake" = You set Service Type to HTTPS instead of HTTP!<br>
+              &nbsp;&nbsp;- "dial tcp 54.206.76.17:3001: i/o timeout" = You used public IP instead of localhost!<br>
               7. <strong>Note:</strong> Cloudflare may show "service URL is not valid" during setup - IGNORE THIS if tunnel is running!
             </div>` : ''}
             ${tunnel.notes ? `<div style="font-size: 11px; color: #856404; margin-top: 5px; font-style: italic; background: #fff3cd; padding: 8px; border-radius: 4px;">📝 ${escapeHtml(tunnel.notes)}</div>` : ''}
