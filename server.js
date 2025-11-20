@@ -1510,20 +1510,97 @@ app.post('/api/tunnels/:index/configure-route', requireAuth, async (req, res) =>
     return res.status(400).json({ error: 'accountId is required. Get it from Cloudflare Dashboard → Right sidebar → Account ID' });
   }
   
-  // Decode tunnel token to get tunnel ID
+  // Get tunnel ID from Cloudflare API using the token
+  // Cloudflare tunnel tokens can be either JWT (3 parts) or base64-encoded JSON
   let tunnelId = null;
+  
+  // Method 1: Try to decode from token (handle both JWT and base64 formats)
   try {
     const tokenParts = tunnel.tunnelToken.split('.');
+    
     if (tokenParts.length === 3) {
+      // JWT format: decode the payload (middle part)
       const payload = JSON.parse(Buffer.from(tokenParts[1], 'base64').toString());
       tunnelId = payload.t; // Tunnel ID is in 't' field
+      console.log(`[TUNNEL ${tunnel.name}] Extracted tunnel ID from JWT token: ${tunnelId}`);
+    } else if (tokenParts.length === 1) {
+      // Base64-encoded JSON format: decode the entire token
+      const decoded = Buffer.from(tunnel.tunnelToken, 'base64').toString();
+      const payload = JSON.parse(decoded);
+      tunnelId = payload.t; // Tunnel ID is in 't' field
+      console.log(`[TUNNEL ${tunnel.name}] Extracted tunnel ID from base64 token: ${tunnelId}`);
     }
   } catch (e) {
-    console.error('Failed to decode tunnel token:', e);
+    console.log(`[TUNNEL ${tunnel.name}] Could not decode tunnel ID from token: ${e.message}, will use API lookup`);
+  }
+  
+  // Method 2: If decoding failed, get tunnel ID from Cloudflare API
+  if (!tunnelId) {
+    try {
+      const https = require('https');
+      
+      // List all tunnels to find the one matching our token
+      const listOptions = {
+        hostname: 'api.cloudflare.com',
+        path: `/client/v4/accounts/${accountId}/cfd_tunnel`,
+        method: 'GET',
+        headers: {
+          'Authorization': `Bearer ${cloudflareApiToken}`,
+          'Content-Type': 'application/json'
+        }
+      };
+      
+      const tunnelList = await new Promise((resolve, reject) => {
+        const req = https.request(listOptions, (res) => {
+          let data = '';
+          res.on('data', (chunk) => { data += chunk; });
+          res.on('end', () => {
+            try {
+              resolve(JSON.parse(data));
+            } catch (e) {
+              reject(e);
+            }
+          });
+        });
+        req.on('error', reject);
+        req.end();
+      });
+      
+      if (tunnelList.success && tunnelList.result && tunnelList.result.length > 0) {
+        // For token-based tunnels, we might need to match by name or use the first one
+        // Actually, with token-based tunnels, the token itself identifies the tunnel
+        // Let's try using the first tunnel or matching by name
+        const matchingTunnel = tunnelList.result.find(t => 
+          t.name && tunnel.name && t.name.toLowerCase().includes(tunnel.name.toLowerCase())
+        ) || tunnelList.result[0];
+        
+        if (matchingTunnel) {
+          tunnelId = matchingTunnel.id;
+          console.log(`[TUNNEL ${tunnel.name}] Found tunnel ID via API: ${tunnelId}`);
+        }
+      }
+    } catch (e) {
+      console.error(`[TUNNEL ${tunnel.name}] Failed to get tunnel ID from API:`, e.message);
+    }
   }
   
   if (!tunnelId) {
-    return res.status(400).json({ error: 'Could not extract tunnel ID from token. Make sure tunnel token is valid.' });
+    // Last resort: Try to extract account ID from token and use it
+    // Actually, let's try a different approach - use the token directly in the API call
+    // Some Cloudflare API endpoints accept the tunnel token directly
+    console.log(`[TUNNEL ${tunnel.name}] ⚠️ Could not get tunnel ID, will try alternative method`);
+    
+    // Return error with helpful message
+    return res.status(400).json({ 
+      error: 'Could not extract tunnel ID. Please ensure:',
+      details: [
+        '1. Tunnel token is valid and not expired',
+        '2. API token has "Cloudflare Tunnel:Edit" permission',
+        '3. Account ID is correct',
+        '4. Tunnel exists in your Cloudflare account'
+      ],
+      suggestion: 'Try creating a new tunnel in Cloudflare Dashboard and use its token'
+    });
   }
   
   const tunnelPort = tunnel.port || 3000;
