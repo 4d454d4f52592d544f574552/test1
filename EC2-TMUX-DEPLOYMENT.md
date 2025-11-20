@@ -344,13 +344,59 @@ Login with password: **12345**
 
 **Summary**: Use the admin panel to create and start Cloudflare tunnels for URL redirection.
 
-1. In the admin panel, click **"Add Tunnel"** or **"Create New Tunnel"**
+**Creating a New Tunnel:**
+
+1. In the admin panel, click **"Add Tunnel"** or fill out the form
 2. Fill in:
-   - **Name**: Any descriptive name
-   - **Tunnel Token**: (Optional) Your Cloudflare tunnel token
-   - **Redirect URL**: Target URL to redirect to
-3. Click **"Save"**
-4. Click **"Start Tunnel"** to launch
+   - **Tunnel Name**: Any descriptive name (e.g., "Tunnel 1", "Client A")
+   - **Cloudflare Tunnel Token**: Get a token from Cloudflare Dashboard → Networks → Tunnels → Create Tunnel → Copy Token
+   - **Redirect URL**: Target URL to redirect to (e.g., https://youtube.com)
+   - **Tunnel URL**: Leave blank (will auto-create)
+3. Click **"Add Tunnel"** or **"Create & Start"**
+4. **Note**: Port is automatically assigned (3000, 3001, 3002, etc.) - check the tunnel info to see which port
+
+**Starting a Tunnel:**
+
+1. Find your tunnel in the list
+2. Click **"Start"** button
+3. Wait 10-15 seconds for tunnel to connect
+4. Check the port number displayed (e.g., Port: 3001)
+
+**Configuring Cloudflare Route (CRITICAL):**
+
+1. Go to Cloudflare Dashboard → Networks → Tunnels
+2. Find your tunnel (the one matching your token)
+3. Click **"Configure"**
+4. Click **"Add Public Hostname"** or **"Add a published application route"**
+5. Fill in:
+   - **Subdomain**: Your desired subdomain (e.g., `cnt-0000-test`)
+   - **Domain**: Your domain (e.g., `stratus-labs.org`)
+   - **Service Type**: **HTTP** (NOT HTTPS - this is critical!)
+   - **Service URL**: `http://localhost:PORT` (use the port from step 4, e.g., `http://localhost:3001`)
+6. Click **"Save"**
+
+**Important Notes:**
+- ⚠️ **Service Type MUST be HTTP** (not HTTPS) - otherwise you'll get "tls: first record does not look like a TLS handshake" error
+- ⚠️ **Service URL MUST be localhost** (not public IP like 54.206.76.17)
+- ⚠️ Cloudflare may show "service URL is not valid" - **IGNORE THIS** if tunnel is running
+- The tunnel will retry connecting until the route is configured correctly
+
+**Checking Tunnel Status:**
+
+On EC2, check if tunnel is running:
+```bash
+# List all tmux sessions (tunnels run in sessions like tunnel-0, tunnel-1, etc.)
+tmux list-sessions
+
+# View a specific tunnel's logs
+tmux attach-session -t tunnel-1
+# Press Ctrl+B then D to detach
+```
+
+**If Tunnel Shows "Retrying connection":**
+- This is normal if the route isn't configured in Cloudflare Dashboard yet
+- Configure the route as described above
+- The tunnel will connect once the route is properly configured
 
 ---
 

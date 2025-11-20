@@ -333,6 +333,9 @@
       
       <div style="background: #f8f9fa; padding: 20px; border-radius: 8px; margin-bottom: 20px;">
         <h3 style="margin-bottom: 15px; font-size: 16px;">Add Tunnel</h3>
+        <div style="background: #e7f3ff; border-left: 4px solid #2196F3; padding: 10px; margin-bottom: 15px; border-radius: 4px; font-size: 12px;">
+          <strong>ℹ️ Port Assignment:</strong> Each new tunnel automatically gets assigned the next available port (3000, 3001, 3002, 3003, etc.). The port will be displayed after creation.
+        </div>
         <form id="addTunnelForm">
           <div class="form-group">
             <label for="tunnelName">Tunnel Name *</label>
@@ -841,13 +844,14 @@
               <strong>Redirects to:</strong> <span style="color: ${tunnel.redirectUrl ? '#28a745' : '#dc3545'}">${escapeHtml(tunnel.redirectUrl || 'Not configured')}</span>
             </div>
             ${tunnel.port && tunnel.hasToken ? `<div style="font-size: 11px; color: #856404; margin-top: 5px; background: #fff3cd; padding: 8px; border-radius: 4px; border-left: 3px solid #ffc107;">
-              <strong>⚠️ Cloudflare Config Steps:</strong><br>
+              <strong>⚠️ Cloudflare Config Steps (CRITICAL - Follow Exactly):</strong><br>
               1. <strong>FIRST:</strong> Click "Start" button above to start the tunnel<br>
-              2. Wait 10 seconds for tunnel to connect<br>
-              3. Then in Cloudflare Dashboard → Networks → Tunnels → Your Tunnel → Configure → Add Public Hostname<br>
-              4. Service Type: <strong>HTTP</strong> (not HTTPS)<br>
-              5. Service URL: <code style="background: white; padding: 2px 4px; border-radius: 2px;">http://localhost:${tunnel.port}</code> (NOT the public IP!)<br>
-              6. <strong>Note:</strong> Cloudflare may show "service URL is not valid" - this is OK if tunnel is running! The route will work once cloudflared connects.
+              2. Wait 10-15 seconds for tunnel to connect (check tmux: <code>tmux attach -t tunnel-${tunnel.index || 'X'}</code>)<br>
+              3. Go to Cloudflare Dashboard → Networks → Tunnels → Your Tunnel → Configure → Add Public Hostname<br>
+              4. <strong style="color: #dc3545;">Service Type: MUST be HTTP (NOT HTTPS!)</strong><br>
+              5. <strong style="color: #dc3545;">Service URL: MUST be <code style="background: white; padding: 2px 4px; border-radius: 2px;">http://localhost:${tunnel.port}</code> (NOT https://, NOT public IP!)</strong><br>
+              6. <strong>Common Error:</strong> If you see "tls: first record does not look like a TLS handshake" - you set Service Type to HTTPS instead of HTTP!<br>
+              7. <strong>Note:</strong> Cloudflare may show "service URL is not valid" during setup - IGNORE THIS if tunnel is running!
             </div>` : ''}
             ${tunnel.notes ? `<div style="font-size: 11px; color: #856404; margin-top: 5px; font-style: italic; background: #fff3cd; padding: 8px; border-radius: 4px;">📝 ${escapeHtml(tunnel.notes)}</div>` : ''}
             <div style="font-size: 11px; color: #667eea; margin-top: 8px; font-weight: 600;">
