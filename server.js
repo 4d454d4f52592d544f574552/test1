@@ -549,6 +549,7 @@ app.get('/api/tunnel-status', requireAuth, async (req, res) => {
       redirectUrl: tunnel.redirectUrl,
       clientName: tunnel.clientName || '',
       notes: tunnel.notes || '',
+      port: tunnel.port || 3000,  // Include port in status
       status: isRunning ? 'running' : 'stopped',
       processRunning: isRunning,
       accessCount: tunnelStats.count,
@@ -556,6 +557,7 @@ app.get('/api/tunnel-status', requireAuth, async (req, res) => {
       lastAccess: tunnelStats.lastAccess,
       hasToken: !!(tunnel.tunnelToken && tunnel.tunnelToken.trim().length > 0),
       hasNamedTunnel: !!(tunnel.tunnelId && tunnel.tunnelName),
+      serviceUrl: `http://localhost:${tunnel.port || 3000}`,  // Service URL for Cloudflare config
       note: isRunning 
         ? 'Tunnel process is running' 
         : 'Tunnel process is not running. Click "Start Tunnel" to launch it.'
@@ -619,7 +621,8 @@ app.get('/api/tunnel-health/:index', requireAuth, (req, res) => {
     health.status = 'quick_tunnel';
   } else if (health.hasToken) {
     health.status = 'token_tunnel';
-        health.issues.push('For token-based tunnels, ensure the route is configured in Cloudflare Dashboard: Networks → Tunnels → Your Tunnel → Configure → Add Public Hostname → Service: http://localhost:3000');
+    const tunnelPort = tunnel.port || 3000;
+    health.issues.push(`For token-based tunnels, ensure the route is configured in Cloudflare Dashboard: Networks → Tunnels → Your Tunnel → Configure → Add Public Hostname → Service: http://localhost:${tunnelPort} (NOT the public IP!)`);
   } else {
     health.status = 'healthy';
   }
@@ -1201,6 +1204,13 @@ app.post('/api/tunnels', requireAuth, (req, res) => {
   if (finalToken) {
     // Token provided (explicit or default) - this gives persistent URLs
     console.log(`[TUNNEL ${name}] Using tunnel token for persistent URL`);
+    console.log(`[TUNNEL ${name}] ⚠️ IMPORTANT: Configure route in Cloudflare Dashboard:`);
+    console.log(`[TUNNEL ${name}]    Service URL: http://localhost:${assignedPort}`);
+    console.log(`[TUNNEL ${name}]    (NOT the public IP - use localhost!)`);
+    
+    // Try to automatically create route using cloudflared (if tunnel ID is available)
+    // Note: For token-based tunnels, routes are typically configured in Cloudflare Dashboard
+    // But we can try to help by providing the correct service URL
   } else if (!url || url.includes('placeholder')) {
     // Try to create a named tunnel for persistence (if not logged in, will fail gracefully)
     const safeTunnelName = name.toLowerCase()

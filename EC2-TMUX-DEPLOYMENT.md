@@ -1,14 +1,6 @@
-# EC2 Deployment with TMUX - 24/7 Operation Guide
+# EC2 Deployment with TMUX - Quick Start Guide
 
-Complete guide for deploying the URL Redirect System on AWS EC2 using **tmux** to keep the server running 24/7.
-
-## Why TMUX?
-
-- ✅ Simple and lightweight
-- ✅ Sessions persist after SSH disconnection
-- ✅ Easy to monitor and manage
-- ✅ No additional dependencies (PM2 not required)
-- ✅ Perfect for single-server deployments
+Complete step-by-step guide to deploy the URL Redirect System on AWS EC2 using tmux.
 
 ## Prerequisites
 
@@ -16,594 +8,722 @@ Complete guide for deploying the URL Redirect System on AWS EC2 using **tmux** t
 - SSH access to your EC2 instance
 - Cloudflare account (for tunnels)
 
-## Part 1: Initial Setup
+---
 
-### Step 1: Connect to EC2 Instance
+## Step 1: Connect to EC2 Instance
+
+**Summary**: Establish SSH connection to your EC2 instance.
 
 ```bash
-ssh -i /path/to/your-key.pem ec2-user@your-ec2-ip-address
+ssh -i /path/to/your-key.pem Ladmin@your-ec2-ip-address
 ```
 
-### Step 2: Update System
+---
+
+## Step 2: Update System and Install Dependencies
+
+**Summary**: Update all system packages to ensure latest security patches and dependencies.
 
 ```bash
 sudo dnf update -y
 ```
 
-### Step 3: Install Node.js
+---
+
+## Step 3: Install Node.js
+
+**Summary**: Install Node.js 18+ runtime and npm package manager required to run the application.
 
 ```bash
-# Install Node.js 18+ from NodeSource
 curl -fsSL https://rpm.nodesource.com/setup_18.x | sudo bash -
 sudo dnf install -y nodejs
-
-# Verify installation
 node --version
 npm --version
 ```
 
-### Step 4: Install Cloudflared
+---
+
+## Step 4: Install Cloudflared
+
+**Summary**: Download and install Cloudflared binary for creating Cloudflare tunnels.
 
 ```bash
-# Download and install cloudflared
 cd /tmp
-wget https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-x86_64.rpm
-sudo dnf install -y ./cloudflared-linux-x86_64.rpm
-
-# Verify installation
+wget https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-x86_64
+chmod +x cloudflared-linux-x86_64
+sudo mv cloudflared-linux-x86_64 /usr/local/bin/cloudflared
 cloudflared --version
-which cloudflared
 ```
 
-### Step 5: Install TMUX
+---
+
+## Step 5: Install TMUX
+
+**Summary**: Install tmux terminal multiplexer to keep server running after SSH disconnection.
 
 ```bash
 sudo dnf install -y tmux
 ```
 
-### Step 6: Configure Firewall
+---
+
+## Step 6: Install Git
+
+**Summary**: Install Git version control to clone the repository from GitHub.
 
 ```bash
-# Allow port 3000 (and additional ports for tunnels)
+sudo dnf install -y git
+```
+
+---
+
+## Step 7: Configure Firewall
+
+**Summary**: Install and configure firewalld to allow incoming connections on ports 3000-3003 for the server and tunnels.
+
+```bash
+sudo dnf install -y firewalld
+sudo systemctl start firewalld
+sudo systemctl enable firewalld
 sudo firewall-cmd --permanent --add-port=3000/tcp
 sudo firewall-cmd --permanent --add-port=3001/tcp
 sudo firewall-cmd --permanent --add-port=3002/tcp
 sudo firewall-cmd --permanent --add-port=3003/tcp
 sudo firewall-cmd --reload
-
-# Verify
 sudo firewall-cmd --list-ports
 ```
 
-### Step 7: Clone Repository
+---
+
+## Step 8: Clone Repository
+
+**Summary**: Download the application code from GitHub repository to the server.
 
 ```bash
 cd ~
-git clone <your-repository-url> url-redirect
-cd url-redirect/"URL REDIRECT PRODUCTION"
+rm -rf url-redirect
+git clone https://github.com/4d454d4f52592d544f574552/test1.git url-redirect
+cd url-redirect
 ```
 
-### Step 8: Install Dependencies
+**If directory doesn't exist, check and fix:**
+
+```bash
+# Check current location
+pwd
+
+# Check what's in home directory
+ls -la ~
+
+# Check if url-redirect exists
+ls -la ~/url-redirect
+
+# If url-redirect exists, check its contents
+ls -la ~/url-redirect/
+
+# If URL-REDIRECT-PRODUCTION doesn't exist, check what directories are there
+find ~/url-redirect -type d -name "*REDIRECT*"
+
+# Re-clone if needed
+cd ~
+rm -rf url-redirect
+git clone https://github.com/4d454d4f52592d544f574552/test1.git url-redirect
+ls -la url-redirect/
+cd url-redirect
+```
+
+---
+
+## Step 9: Install Dependencies
+
+**Summary**: Install all Node.js package dependencies required by the application.
 
 ```bash
 npm install --production
 ```
 
-### Step 9: Create Data Directory
+---
+
+## Step 10: Create Data Directory
+
+**Summary**: Create directory to store application data files (tunnels.json, analytics.json).
 
 ```bash
 mkdir -p data
 ```
 
-### Step 10: Set Environment Variables
+---
 
-Create a `.env` file:
+## Step 11: Generate Session Secret
+
+**Summary**: Generate a cryptographically secure random string to use as session secret for authentication.
+
+```bash
+node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"
+```
+2dc5702c9cd35189d9fa249f9182a9c51eb01ba5d585e9a9150e40d30c6effa6
+
+**Note**: You can use the generated value or use "adminL" as specified.
+
+---
+
+## Step 12: Create Environment File
+
+**Summary**: Create .env file with configuration variables including admin password and session secret.
 
 ```bash
 nano .env
 ```
 
-Add:
+Add the following:
+
 ```
-ADMIN_PASSWORD=your-secure-password-here
-SESSION_SECRET=your-random-session-secret-here
+ADMIN_PASSWORD=12345
+SESSION_SECRET=adminL
 PORT=3000
 NODE_ENV=production
 ```
 
-Generate a secure session secret:
-```bash
-node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"
-```
+Press `Ctrl+X`, then `Y`, then `Enter` to save.
 
-## Part 2: Cloudflare Tunnel Setup
+---
 
-### Step 11: Authenticate Cloudflared
+## Step 13: Configure AWS Security Group
+
+**Summary**: Configure EC2 security group in AWS Console to allow inbound traffic on required ports.
+
+1. Go to AWS Console → EC2 → Security Groups
+2. Select your instance's security group
+3. Add inbound rules:
+   - **Port 3000**: Custom TCP, Source: 0.0.0.0/0
+   - **Port 3001-3010**: Custom TCP, Source: 0.0.0.0/0 (for tunnels)
+   - **Port 22**: SSH (should already be open)
+
+---
+
+## Step 14: Authenticate Cloudflared
+
+**Summary**: Authenticate cloudflared with your Cloudflare account to enable tunnel creation.
 
 ```bash
 cloudflared tunnel login
 ```
 
-This will open a browser window (or give you a URL to open on your local machine).
+This will give you a URL to open in your browser. Complete the authentication.
 
-### Step 12: Create a Tunnel (Optional - for Token-Based Tunnels)
+---
 
-```bash
-# Create a named tunnel
-cloudflared tunnel create my-tunnel
+## Step 15: Start Server in TMUX
 
-# List your tunnels
-cloudflared tunnel list
-```
+**Summary**: Start the Node.js server in a tmux session on the EC2 instance so it continues running after SSH disconnection.
 
-### Step 13: Get Tunnel Token (For Token-Based Tunnels)
-
-1. Go to [Cloudflare Dashboard](https://dash.cloudflare.com/)
-2. Navigate to: **Networks** → **Tunnels**
-3. Click on your tunnel
-4. Click **Configure**
-5. Copy the **Tunnel Token**
-
-## Part 3: Configure AWS Security Group
-
-### Step 14: Open Required Ports
-
-1. Go to AWS Console → EC2 → Security Groups
-2. Select your instance's security group
-3. Add inbound rules:
-   - **Port 3000**: Custom TCP, Source: 0.0.0.0/0 (or your IP)
-   - **Port 3001-3010**: Custom TCP, Source: 0.0.0.0/0 (for additional tunnels)
-   - **Port 22**: SSH (should already be open)
-
-## Part 4: Start with TMUX
-
-### Step 15: Create TMUX Session
-
-```bash
-# Create a new tmux session named "url-redirect"
-tmux new-session -d -s url-redirect
-
-# Attach to the session
-tmux attach-session -t url-redirect
-```
-
-### Step 16: Start the Server
-
-Inside the tmux session:
+**Verify you're on the EC2 instance, then run:**
 
 ```bash
 # Navigate to project directory
-cd ~/url-redirect/"URL REDIRECT PRODUCTION"
+cd ~/url-redirect
 
-# Load environment variables (if using .env file, you'll need dotenv package)
-# Or set them directly:
-export ADMIN_PASSWORD=your-secure-password-here
-export SESSION_SECRET=your-session-secret-here
-export PORT=3000
-export NODE_ENV=production
+# Load environment variables from .env file
+export $(grep -v '^#' .env | xargs)
 
-# Start the server
-node server.js
-```
+# Kill any existing session (optional, if restarting)
+tmux kill-session -t url-redirect2 2>/dev/null
 
-Or use npm:
-```bash
-npm start
-```
+# Create new tmux session in detached mode
+tmux new-session -d -s url-redirect2
 
-### Step 17: Detach from TMUX
+# Send commands to start the server inside tmux
+tmux send-keys -t url-redirect2 "cd ~/url-redirect && export \$(grep -v '^#' .env | xargs) && node server.js" Enter
 
-Once the server is running, detach from tmux:
-- Press: `Ctrl+B`, then `D` (or `Ctrl+B D`)
+# Wait a moment for server to start
+sleep 3
 
-The server will continue running in the background!
-
-### Step 18: Verify Server is Running
-
-```bash
-# Check if server is running
+# Verify server started (should work from EC2)
 curl http://localhost:3000/test
-
-# Check tmux session
-tmux list-sessions
-
-# View server output (reattach to session)
-tmux attach-session -t url-redirect
 ```
 
-## Part 5: TMUX Management Commands
+**Expected output**: You should see a response from the server, confirming it's running on EC2.
 
-### Basic TMUX Commands
+**To view server logs:**
+```bash
+tmux attach-session -t url-redirect2
+# Press Ctrl+B then D to detach
+```
+
+---
+
+## Step 16: Verify Server is Running on EC2
+
+**Summary**: Verify that the server is running successfully on the EC2 instance.
+
+**All these commands should be run ON THE EC2 INSTANCE:**
+
+**Step 1: Check if tmux session exists:**
+```bash
+tmux list-sessions
+```
+Should show: `url-redirect2: 1 windows`
+
+**Step 2: Check if server process is running:**
+```bash
+ps aux | grep "node server.js"
+```
+Should show the node process running.
+
+**Step 3: Check if port 3000 is listening:**
+```bash
+sudo netstat -tlnp | grep 3000
+```
+Should show: `tcp 0 0 0.0.0.0:3000` (listening on all interfaces)
+
+**Step 4: Test server locally on EC2:**
+```bash
+curl http://localhost:3000/test
+```
+**If this works, your server IS running on EC2!**
+
+**Step 5: Check server logs:**
+```bash
+tmux attach-session -t url-redirect2
+```
+- Look for: "Main server running at http://localhost:3000"
+- Press `Ctrl+B` then `D` to detach from tmux
+- If you see errors, fix them and restart
+
+**Step 6: Verify firewall allows port 3000:**
+```bash
+sudo firewall-cmd --list-ports
+```
+Should show: `3000/tcp`
+
+**Step 7: Get your public IP (to access from outside):**
+```bash
+curl ifconfig.me
+```
+Copy this IP - you'll use it to access from your local computer.
+
+**The server is now running on EC2!** To access it from your local computer, use the public IP in your browser: `http://YOUR_PUBLIC_IP:3000/admin`
+
+---
+
+## Step 17: Access Admin Panel
+
+**Summary**: Get your EC2 public IP address and access the web-based admin panel.
+
+**IMPORTANT**: You must use the **PUBLIC IP**, not the private IP (172.31.x.x). The private IP only works from within AWS network.
+
+**Get your EC2 public IP (choose one method):**
+
+**Method 1: From EC2 instance (recommended):**
+```bash
+curl ifconfig.me
+```
+
+**Method 2: From AWS Console:**
+1. Go to AWS Console → EC2 → Instances
+2. Select your instance
+3. Copy the **Public IPv4 address** (NOT the Private IPv4 address)
+
+**Method 3: From EC2 instance metadata:**
+```bash
+curl http://169.254.169.254/latest/meta-data/public-ipv4
+```
+
+**Access the admin panel:**
+Open in your browser: `http://YOUR_PUBLIC_IP:3000/admin`
+
+**Example**: If your public IP is `54.123.45.67`, use: `http://54.123.45.67:3000/admin`
+
+Login with password: **12345**
+
+**Note**: If you see `172.31.x.x` (private IP), that won't work from your local machine. You MUST use the public IP.
+
+---
+
+## Step 18: Create and Start Tunnels
+
+**Summary**: Use the admin panel to create and start Cloudflare tunnels for URL redirection.
+
+1. In the admin panel, click **"Add Tunnel"** or **"Create New Tunnel"**
+2. Fill in:
+   - **Name**: Any descriptive name
+   - **Tunnel Token**: (Optional) Your Cloudflare tunnel token
+   - **Redirect URL**: Target URL to redirect to
+3. Click **"Save"**
+4. Click **"Start Tunnel"** to launch
+
+---
+
+## Useful Commands
+
+### View Server Logs
+**Summary**: Attach to tmux session to view real-time server logs and output.
 
 ```bash
-# Create a new session
-tmux new-session -d -s session-name
+tmux attach-session -t url-redirect2
+```
+Press `Ctrl+B` then `D` to detach.
 
-# List all sessions
+### Check Server Status
+**Summary**: Verify server is running and responding to requests.
+
+```bash
+curl http://localhost:3000/test
 tmux list-sessions
-
-# Attach to a session
-tmux attach-session -t session-name
-
-# Detach from session (while inside)
-# Press: Ctrl+B, then D
-
-# Kill a session
-tmux kill-session -t session-name
-
-# Rename a session
-tmux rename-session -t old-name new-name
 ```
 
-### Inside TMUX (Key Bindings)
+### Restart Server
+**Summary**: Stop and restart the server in tmux session.
 
-- **Ctrl+B D**: Detach from session
-- **Ctrl+B C**: Create new window
-- **Ctrl+B N**: Next window
-- **Ctrl+B P**: Previous window
-- **Ctrl+B %**: Split pane vertically
-- **Ctrl+B "**: Split pane horizontally
-- **Ctrl+B [**: Enter scroll mode (use arrow keys, press Q to exit)
+```bash
+tmux kill-session -t url-redirect2
+cd ~/url-redirect
+export $(grep -v '^#' .env | xargs)
+tmux new-session -d -s url-redirect2
+tmux send-keys -t url-redirect2 "cd ~/url-redirect && export \$(grep -v '^#' .env | xargs) && node server.js" Enter
+```
 
-## Part 6: Auto-Start on Server Reboot
+### Stop Server
+**Summary**: Stop the server by killing the tmux session.
 
-### Option A: Using systemd (Recommended)
+```bash
+tmux kill-session -t url-redirect2
+```
 
-Create a systemd service that starts tmux and runs the server:
+---
+
+## Auto-Start on Reboot (Optional)
+
+**Summary**: Configure systemd service to automatically start the server when EC2 instance reboots.
+
+Create a systemd service:
 
 ```bash
 sudo nano /etc/systemd/system/url-redirect.service
 ```
 
-Add:
+Paste this (replace `Ladmin` with your actual EC2 username if different):
+
 ```ini
 [Unit]
-Description=URL Redirect Service (TMUX)
+Description=URL Redirect Service
 After=network.target
 
 [Service]
-Type=forking
-User=ec2-user
-WorkingDirectory=/home/ec2-user/url-redirect/URL REDIRECT PRODUCTION
-Environment="NODE_ENV=production"
-Environment="PORT=3000"
-Environment="ADMIN_PASSWORD=your-secure-password-here"
-Environment="SESSION_SECRET=your-session-secret-here"
-ExecStart=/usr/bin/tmux new-session -d -s url-redirect -c /home/ec2-user/url-redirect/"URL REDIRECT PRODUCTION" 'node server.js'
-ExecStop=/usr/bin/tmux kill-session -t url-redirect
-RemainAfterExit=yes
+Type=simple
+User=Ladmin
+WorkingDirectory=/home/Ladmin/url-redirect
+EnvironmentFile=/home/Ladmin/url-redirect/.env
+ExecStart=/usr/bin/node /home/Ladmin/url-redirect/server.js
+Restart=always
+RestartSec=10
 
 [Install]
 WantedBy=multi-user.target
 ```
 
-**Note**: Replace paths and username as needed.
-
 Enable and start:
+
 ```bash
 sudo systemctl daemon-reload
 sudo systemctl enable url-redirect
 sudo systemctl start url-redirect
-```
-
-Check status:
-```bash
 sudo systemctl status url-redirect
 ```
 
-### Option B: Using rc.local (Alternative)
+---
+
+## Troubleshooting
+
+### Server Not Running
+**Summary**: Check tmux session for error messages and restart if needed.
+
+**Step 1: Check if tmux session exists:**
+```bash
+tmux list-sessions
+```
+
+**Step 2: Check if server process is running:**
+```bash
+ps aux | grep "node server.js"
+```
+
+**Step 3: Check if port 3000 is in use:**
+```bash
+sudo lsof -i :3000
+# Or
+sudo netstat -tlnp | grep 3000
+```
+
+**Step 4: View server logs to see errors:**
+```bash
+tmux attach-session -t url-redirect2
+```
+Look for error messages. Press `Ctrl+B` then `D` to detach.
+
+**Step 5: Test server locally:**
+```bash
+curl http://localhost:3000/test
+```
+If this works, server is running correctly!
+
+**Step 6: Verify port is listening on all interfaces:**
+```bash
+sudo netstat -tlnp | grep 3000
+# Should show: tcp 0 0 0.0.0.0:3000 (not 127.0.0.1:3000)
+```
+
+**Step 7: Verify firewall allows port 3000:**
+```bash
+sudo firewall-cmd --list-ports
+# Should show: 3000/tcp
+```
+
+**Step 8: Verify AWS Security Group:**
+- Go to AWS Console → EC2 → Security Groups
+- Select your instance's security group
+- Inbound Rules must have: Type: Custom TCP, Port: 3000, Source: 0.0.0.0/0
+
+**Step 9: Test from your LOCAL COMPUTER (not from EC2):**
+From your local machine, open browser or use curl:
+```bash
+curl http://54.206.76.17:3000/test
+```
+**IMPORTANT**: You cannot test the public IP from within EC2. You MUST test from your local computer.
+
+**Step 3: If session doesn't exist or server crashed, restart:**
+```bash
+cd ~/url-redirect
+export $(grep -v '^#' .env | xargs)
+tmux new-session -d -s url-redirect2
+tmux send-keys -t url-redirect2 "cd ~/url-redirect && export \$(grep -v '^#' .env | xargs) && node server.js" Enter
+sleep 2
+curl http://localhost:3000/test
+```
+
+**Step 4: Check if port is already in use:**
+```bash
+sudo lsof -i :3000
+# If something is using port 3000, kill it:
+# sudo kill -9 <PID>
+```
+
+**Step 5: Verify .env file exists and has correct values:**
+```bash
+cat ~/url-redirect/.env
+```
+
+**Step 6: Test server manually (outside tmux) to see errors:**
+```bash
+cd ~/url-redirect
+export $(grep -v '^#' .env | xargs)
+node server.js
+```
+Press `Ctrl+C` to stop after checking for errors.
+
+### Can't Access Admin Panel
+**Summary**: Troubleshoot connection issues by checking server, firewall, and security group.
+
+**Step 1: Verify you're using the PUBLIC IP, not private IP:**
+```bash
+# Get your public IP
+curl ifconfig.me
+
+# Or from metadata
+curl http://169.254.169.254/latest/meta-data/public-ipv4
+```
+**IMPORTANT**: If you see `172.31.x.x`, that's the private IP and won't work from outside AWS. You MUST use the public IP.
+
+**Step 2: Check server is running locally:**
+```bash
+curl http://localhost:3000/test
+```
+
+**Step 3: Check firewall:**
+```bash
+sudo firewall-cmd --list-ports
+```
+
+**Step 4: CRITICAL - Fix AWS Security Group (Most Common Issue):**
+
+Your server is running correctly, but AWS Security Group is blocking external access. Follow these exact steps:
+
+**4a. Go to AWS Console:**
+1. Open AWS Console → **EC2** → **Instances**
+2. Find your instance (the one with IP 54.206.76.17)
+3. Click on the instance to select it
+
+**4b. Check Security Group:**
+1. Look at the bottom panel, click the **Security** tab
+2. You'll see "Security groups" - click on the security group name (it's a blue link)
+
+**4c. Edit Inbound Rules:**
+1. In the security group page, click **Edit inbound rules** button
+2. Check if there's a rule for port 3000:
+   - Look for: **Type**: Custom TCP, **Port**: 3000, **Source**: 0.0.0.0/0
+
+**4d. If rule is MISSING or incorrect:**
+1. Click **Add rule**
+2. Fill in:
+   - **Type**: Custom TCP
+   - **Port range**: `3000`
+   - **Source**: `0.0.0.0/0` (allows from anywhere) OR your specific IP for better security
+   - **Description**: `URL Redirect Server`
+3. Click **Save rules**
+
+**4e. Wait 10-30 seconds** for AWS to propagate the changes
+
+**4f. Test again from your LOCAL COMPUTER:**
+```bash
+# From your local terminal (not EC2)
+curl http://54.206.76.17:3000/test
+```
+
+Or open in browser: `http://54.206.76.17:3000/admin`
+
+**4g. If still not working, check for multiple security groups:**
+- Your instance might have multiple security groups
+- Check ALL security groups attached to your instance
+- Make sure at least ONE of them allows port 3000
+
+**Step 5: Check server logs:**
+```bash
+tmux attach-session -t url-redirect2
+```
+
+**Step 6: Verify server is actually running:**
+```bash
+# Check if process is running
+ps aux | grep "node server.js"
+
+# Check if port 3000 is listening
+sudo netstat -tlnp | grep 3000
+# Or
+sudo ss -tlnp | grep 3000
+
+# Check what's listening on port 3000
+sudo lsof -i :3000
+```
+
+**Step 7: Test from EC2 instance using localhost (should work):**
+```bash
+curl http://localhost:3000/test
+```
+
+**Step 8: CRITICAL - Test from your LOCAL COMPUTER, not from EC2:**
+
+**You CANNOT reliably test the public IP from within the EC2 instance itself.** This is normal AWS behavior.
+
+**From your local computer (not EC2), run:**
+```bash
+# Replace with your actual public IP
+curl http://54.206.76.17:3000/test
+```
+
+**Or open in your browser:**
+```
+http://54.206.76.17:3000/admin
+```
+
+**If this fails from your local computer, check:**
+1. Server is running on EC2: `curl http://localhost:3000/test` (on EC2)
+2. Port 3000 is listening: `sudo netstat -tlnp | grep 3000` (on EC2)
+3. AWS Security Group has inbound rule: Port 3000, Source 0.0.0.0/0
+4. Firewall allows port 3000: `sudo firewall-cmd --list-ports` (on EC2)
+
+**Step 9: Verify AWS Security Group is configured:**
+1. Go to AWS Console → EC2 → Security Groups
+2. Select your instance's security group
+3. Check **Inbound Rules** tab
+4. Must have: **Type**: Custom TCP, **Port**: 3000, **Source**: 0.0.0.0/0
+5. If missing, click "Edit inbound rules" → "Add rule" → Save
+
+**Step 10: Test from your local computer (not EC2):**
+From your local machine, open browser or use curl:
+```bash
+# Replace with your actual public IP
+curl http://54.206.76.17:3000/test
+```
+
+**Common Issues:**
+- ❌ **Wrong**: `http://172.31.18.120:3000/admin` (private IP - won't work from your computer)
+- ✅ **Correct**: `http://54.206.76.17:3000/admin` (public IP - works from anywhere)
+- ⚠️ **Server not running**: Check tmux session and restart if needed
+- ⚠️ **Security group blocking**: Must allow port 3000 from 0.0.0.0/0
+
+### Cloudflared Not Found
+**Summary**: Verify cloudflared installation and reinstall if missing.
 
 ```bash
-sudo nano /etc/rc.local
+which cloudflared
+# If not found, reinstall from Step 4
 ```
 
-Add before `exit 0`:
-```bash
-# Start URL Redirect in tmux
-su - ec2-user -c "tmux new-session -d -s url-redirect -c '/home/ec2-user/url-redirect/URL REDIRECT PRODUCTION' 'node server.js'"
-```
-
-Make executable:
-```bash
-sudo chmod +x /etc/rc.local
-```
-
-### Option C: Using Crontab @reboot
+### Firewall Not Working
+**Summary**: Check firewalld service status and reload configuration.
 
 ```bash
-crontab -e
+sudo systemctl status firewalld
+sudo firewall-cmd --reload
 ```
 
-Add:
+### Directory Not Found Error
+**Summary**: Fix "No such file or directory" error when trying to access the project directory.
+
+**Step 1: Check current location and what exists:**
+```bash
+pwd
+ls -la ~
 ```
-@reboot sleep 30 && cd /home/ec2-user/url-redirect/"URL REDIRECT PRODUCTION" && /usr/bin/tmux new-session -d -s url-redirect 'export ADMIN_PASSWORD=your-password && export SESSION_SECRET=your-secret && node server.js'
+
+**Step 2: Check if url-redirect directory exists:**
+```bash
+ls -la ~/url-redirect
 ```
 
-## Part 7: Launch Cloudflare Tunnels
+**Step 3: If url-redirect exists, check its contents:**
+```bash
+ls -la ~/url-redirect/
+find ~/url-redirect -type d
+```
 
-### Step 19: Access Admin Panel
+**Step 4: Re-clone the repository:**
+```bash
+cd ~
+rm -rf url-redirect
+git clone https://github.com/4d454d4f52592d544f574552/test1.git url-redirect
+ls -la url-redirect/
+```
 
-Get your EC2 public IP:
+**Step 5: Navigate to the correct directory:**
+```bash
+# Check what's actually in the repository
+ls -la ~/url-redirect/
+
+# Navigate to the project directory
+cd ~/url-redirect
+ls -la
+
+# Verify server.js exists
+ls -la server.js
+```
+
+---
+
+## Summary
+
+Your system is now:
+- ✅ Running 24/7 in tmux
+- ✅ Survives SSH disconnection
+- ✅ Accessible at `http://YOUR_PUBLIC_IP:3000/admin`
+- ✅ Ready to create and manage Cloudflare tunnels
+
+**Access your admin panel**: `http://YOUR_PUBLIC_IP:3000/admin`
+**Default login password**: **12345**
+
+**To get your public IP, run on EC2:**
 ```bash
 curl ifconfig.me
 ```
 
-Access: `http://YOUR_EC2_IP:3000/admin`
-
-Login with your password.
-
-### Step 20: Create and Start Tunnels
-
-1. Click **"Add Tunnel"** or **"Create New Tunnel"**
-2. Fill in tunnel details:
-   - **Name**: Descriptive name
-   - **Tunnel Token**: (Optional) Your Cloudflare tunnel token
-   - **Redirect URL**: Target URL
-3. Click **"Save"**
-4. Click **"Start Tunnel"** to launch the tunnel
-
-The tunnel will run in a detached process and continue even if you disconnect from tmux!
-
-## Part 8: Monitoring and Maintenance
-
-### View Server Logs
-
-```bash
-# Attach to tmux session to see live logs
-tmux attach-session -t url-redirect
-
-# Or capture output to a file (modify start command)
-# node server.js | tee server.log
-```
-
-### Check Server Status
-
-```bash
-# Test endpoint
-curl http://localhost:3000/test
-
-# Check if process is running
-ps aux | grep "node server.js"
-
-# Check tmux session
-tmux list-sessions
-```
-
-### Restart Server
-
-```bash
-# Option 1: Restart from inside tmux
-tmux attach-session -t url-redirect
-# Press Ctrl+C to stop, then restart: node server.js
-
-# Option 2: Kill and restart session
-tmux kill-session -t url-redirect
-tmux new-session -d -s url-redirect -c ~/url-redirect/"URL REDIRECT PRODUCTION" 'node server.js'
-```
-
-### Check Cloudflared Processes
-
-```bash
-# Check if cloudflared processes are running
-ps aux | grep cloudflared
-
-# Check tunnel status in admin panel
-# Or view server logs in tmux
-```
-
-## Part 9: Troubleshooting
-
-### Server Won't Start in TMUX
-
-```bash
-# Check if tmux session exists
-tmux list-sessions
-
-# Check for errors
-tmux attach-session -t url-redirect
-
-# Check Node.js
-node --version
-
-# Check dependencies
-cd ~/url-redirect/"URL REDIRECT PRODUCTION"
-npm install --production
-```
-
-### Can't Access Admin Panel
-
-1. **Check if server is running**:
-   ```bash
-   tmux list-sessions
-   curl http://localhost:3000/test
-   ```
-
-2. **Check firewall**:
-   ```bash
-   sudo firewall-cmd --list-ports
-   ```
-
-3. **Check security group** in AWS Console
-
-4. **View server logs**:
-   ```bash
-   tmux attach-session -t url-redirect
-   ```
-
-### TMUX Session Died
-
-```bash
-# Check what happened
-tmux list-sessions
-
-# If session doesn't exist, recreate it
-tmux new-session -d -s url-redirect -c ~/url-redirect/"URL REDIRECT PRODUCTION" 'node server.js'
-
-# Check system logs if using systemd
-sudo journalctl -u url-redirect -n 50
-```
-
-### Cloudflared Not Found
-
-```bash
-# Check if installed
-which cloudflared
-
-# Reinstall if needed
-cd /tmp
-wget https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-x86_64.rpm
-sudo dnf install -y ./cloudflared-linux-x86_64.rpm
-```
-
-### Tunnels Stop After Reconnect
-
-The cloudflared processes are detached, so they should survive. However, if the Node.js server restarts, you'll need to restart tunnels from the admin panel.
-
-**Solution**: Use the admin panel to restart tunnels after server restart, or implement auto-start (see Part 10).
-
-## Part 10: Advanced Configuration
-
-### Auto-Start Tunnels on Server Restart
-
-The server doesn't automatically restart tunnels on startup. You have two options:
-
-**Option 1**: Manually start tunnels from admin panel after server restart
-
-**Option 2**: Create a startup script that starts tunnels via API:
-
-```bash
-nano ~/url-redirect/"URL REDIRECT PRODUCTION"/start-tunnels.sh
-```
-
-Add:
-```bash
-#!/bin/bash
-# Wait for server to be ready
-sleep 10
-
-# Login to admin panel and start tunnels
-# You'll need to implement this based on your tunnel configuration
-# Or use curl with session cookies to call the API
-```
-
-### Multiple TMUX Windows
-
-You can use multiple windows in tmux for different tasks:
-
-```bash
-# Inside tmux session
-# Ctrl+B C - Create new window
-# Ctrl+B N - Next window
-# Ctrl+B P - Previous window
-
-# Or from command line
-tmux new-window -t url-redirect -n logs 'tail -f server.log'
-```
-
-### Logging to File
-
-Modify the start command to log to a file:
-
-```bash
-# Inside tmux
-node server.js 2>&1 | tee server.log
-```
-
-Or create a startup script:
-
-```bash
-nano ~/url-redirect/"URL REDIRECT PRODUCTION"/start-server.sh
-```
-
-Add:
-```bash
-#!/bin/bash
-cd "$(dirname "$0")"
-export ADMIN_PASSWORD=your-password
-export SESSION_SECRET=your-secret
-export PORT=3000
-export NODE_ENV=production
-node server.js 2>&1 | tee server.log
-```
-
-Make executable:
-```bash
-chmod +x start-server.sh
-```
-
-Then start in tmux:
-```bash
-tmux new-session -d -s url-redirect -c ~/url-redirect/"URL REDIRECT PRODUCTION" './start-server.sh'
-```
-
-## Part 11: Security Best Practices
-
-### 1. Change Default Password
-
-Set `ADMIN_PASSWORD` environment variable (already done in setup).
-
-### 2. Use Strong Session Secret
-
-Generate a random secret (already done in setup).
-
-### 3. Restrict Security Group
-
-Use your specific IP instead of `0.0.0.0/0` in AWS Security Group.
-
-### 4. Use HTTPS (Optional)
-
-Set up Nginx reverse proxy with Let's Encrypt (see main deployment guide).
-
-## Quick Reference Commands
-
-```bash
-# Start server in tmux
-tmux new-session -d -s url-redirect -c ~/url-redirect/"URL REDIRECT PRODUCTION" 'node server.js'
-
-# Attach to session
-tmux attach-session -t url-redirect
-
-# Detach from session
-# Press: Ctrl+B, then D
-
-# List sessions
-tmux list-sessions
-
-# Kill session
-tmux kill-session -t url-redirect
-
-# Check server
-curl http://localhost:3000/test
-
-# View logs (inside tmux)
-# Just look at the output, or use scroll mode: Ctrl+B [
-```
-
-## Comparison: TMUX vs PM2
-
-| Feature | TMUX | PM2 |
-|---------|------|-----|
-| **Simplicity** | ✅ Very simple | More complex |
-| **Auto-restart on crash** | ❌ Manual | ✅ Automatic |
-| **Log management** | Manual | ✅ Built-in |
-| **Resource monitoring** | Manual | ✅ Built-in |
-| **Process management** | Basic | ✅ Advanced |
-| **Dependencies** | None (built-in) | Requires npm install |
-
-**Recommendation**: 
-- Use **TMUX** if you want simplicity and don't need auto-restart
-- Use **PM2** if you need automatic crash recovery and advanced monitoring
-
-## Summary
-
-Your URL Redirect System is now:
-- ✅ Running 24/7 in tmux
-- ✅ Survives SSH disconnection
-- ✅ Cloudflare tunnels can be managed from admin panel
-- ✅ Can be configured to auto-start on server reboot
-- ✅ Simple and lightweight
-
-**Access your admin panel**: `http://YOUR_EC2_IP:3000/admin`
-
-**Note**: If the server crashes, you'll need to manually restart it. Consider using PM2 if you need automatic crash recovery.
-
+**IMPORTANT**: Always use the **PUBLIC IP** (not 172.31.x.x private IP) to access from your local machine!

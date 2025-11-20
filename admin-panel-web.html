@@ -830,12 +830,19 @@
               <span style="font-size: 11px; color: ${statusColor}; font-weight: 600;">${statusText}</span>
             </div>
             <div style="font-size: 12px; color: #666; word-break: break-all;">
+              <strong>Port:</strong> <span style="background: #17a2b8; color: white; padding: 2px 8px; border-radius: 10px; font-size: 11px; font-weight: 600;">${tunnel.port || 'N/A'}</span>
+              ${tunnel.port ? `<span style="font-size: 11px; color: #856404; margin-left: 8px;">Service URL: http://localhost:${tunnel.port}</span>` : ''}
+            </div>
+            <div style="font-size: 12px; color: #666; word-break: break-all; margin-top: 5px;">
               <strong>URL:</strong> <a href="${escapeHtml(tunnel.url)}" target="_blank" style="color: #667eea; text-decoration: none;">${escapeHtml(tunnel.url)}</a>
               <button onclick="copyToClipboard('${escapeHtml(tunnel.url)}')" style="margin-left: 8px; padding: 2px 8px; font-size: 10px; background: #f8f9fa; border: 1px solid #ddd; border-radius: 3px; cursor: pointer; color: #666;">📋 Copy</button>
             </div>
             <div style="font-size: 12px; color: #666; margin-top: 5px; word-break: break-all;">
               <strong>Redirects to:</strong> <span style="color: ${tunnel.redirectUrl ? '#28a745' : '#dc3545'}">${escapeHtml(tunnel.redirectUrl || 'Not configured')}</span>
             </div>
+            ${tunnel.port && tunnel.hasToken ? `<div style="font-size: 11px; color: #856404; margin-top: 5px; background: #fff3cd; padding: 8px; border-radius: 4px; border-left: 3px solid #ffc107;">
+              <strong>⚠️ Cloudflare Config:</strong> In Cloudflare Dashboard, add route: Service URL = <code style="background: white; padding: 2px 4px; border-radius: 2px;">http://localhost:${tunnel.port}</code> (NOT the public IP!)
+            </div>` : ''}
             ${tunnel.notes ? `<div style="font-size: 11px; color: #856404; margin-top: 5px; font-style: italic; background: #fff3cd; padding: 8px; border-radius: 4px;">📝 ${escapeHtml(tunnel.notes)}</div>` : ''}
             <div style="font-size: 11px; color: #667eea; margin-top: 8px; font-weight: 600;">
               👆 ${tunnel.accessCount || 0} access${tunnel.accessCount !== 1 ? 'es' : ''}
