@@ -1633,10 +1633,20 @@ app.post('/api/tunnels/:index/configure-route', requireAuth, async (req, res) =>
           res.on('end', () => {
             try {
               const parsed = JSON.parse(data);
+              console.log(`[TUNNEL ${tunnel.name}] GET config response status: ${res.statusCode}`);
+              
+              // Check HTTP status code first
+              if (res.statusCode === 404) {
+                console.log(`[TUNNEL ${tunnel.name}] Configuration not found (404), will create new one`);
+                resolve(null); // Return null to indicate no existing config
+                return;
+              }
+              
               if (!parsed.success) {
                 // If config doesn't exist, that's okay - we'll create it
                 if (parsed.errors?.[0]?.message?.includes('not found') || 
-                    parsed.errors?.[0]?.code === 1003) {
+                    parsed.errors?.[0]?.code === 1003 ||
+                    res.statusCode === 404) {
                   console.log(`[TUNNEL ${tunnel.name}] Configuration not found, will create new one`);
                   resolve(null); // Return null to indicate no existing config
                   return;
