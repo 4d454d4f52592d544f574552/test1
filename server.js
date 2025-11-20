@@ -1630,13 +1630,23 @@ app.post('/api/tunnels/:index/configure-route', requireAuth, async (req, res) =>
         res.on('data', (chunk) => { data += chunk; });
         res.on('end', () => {
           try {
-            resolve(JSON.parse(data));
+            const parsed = JSON.parse(data);
+            if (!parsed.success) {
+              console.error(`[TUNNEL ${tunnel.name}] Cloudflare API error:`, parsed.errors);
+              reject(new Error(parsed.errors?.[0]?.message || 'Cloudflare API returned error'));
+              return;
+            }
+            resolve(parsed);
           } catch (e) {
+            console.error(`[TUNNEL ${tunnel.name}] Failed to parse API response:`, data);
             reject(e);
           }
         });
       });
-      req.on('error', reject);
+      req.on('error', (error) => {
+        console.error(`[TUNNEL ${tunnel.name}] Request error:`, error);
+        reject(error);
+      });
       req.end();
     });
     
@@ -1683,13 +1693,18 @@ app.post('/api/tunnels/:index/configure-route', requireAuth, async (req, res) =>
         res.on('data', (chunk) => { data += chunk; });
         res.on('end', () => {
           try {
-            resolve(JSON.parse(data));
+            const parsed = JSON.parse(data);
+            resolve(parsed);
           } catch (e) {
+            console.error(`[TUNNEL ${tunnel.name}] Failed to parse update response:`, data);
             reject(e);
           }
         });
       });
-      req.on('error', reject);
+      req.on('error', (error) => {
+        console.error(`[TUNNEL ${tunnel.name}] Update request error:`, error);
+        reject(error);
+      });
       req.write(JSON.stringify({ config }));
       req.end();
     });
@@ -1703,16 +1718,20 @@ app.post('/api/tunnels/:index/configure-route', requireAuth, async (req, res) =>
         serviceUrl: serviceUrl
       });
     } else {
+      console.error(`[TUNNEL ${tunnel.name}] ❌ Cloudflare API returned error:`, updateResult.errors);
       res.status(500).json({
         error: 'Failed to configure route',
-        details: updateResult.errors || updateResult
+        details: updateResult.errors || updateResult,
+        message: updateResult.errors?.[0]?.message || 'Unknown error from Cloudflare API'
       });
     }
   } catch (error) {
     console.error(`[TUNNEL ${tunnel.name}] ❌ Failed to configure route via API:`, error);
+    console.error(`[TUNNEL ${tunnel.name}] Error stack:`, error.stack);
     res.status(500).json({
       error: 'Failed to configure route via API',
-      details: error.message
+      details: error.message,
+      stack: process.env.NODE_ENV === 'development' ? error.stack : undefined
     });
   }
 });
