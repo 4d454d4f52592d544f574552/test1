@@ -539,7 +539,19 @@ app.get('/api/tunnel-status', requireAuth, async (req, res) => {
   for (let i = 0; i < tunnels.length; i++) {
     const tunnel = tunnels[i];
     const processInfo = tunnelProcesses.get(i);
-    const isRunning = !!processInfo;
+    const tmuxSessionName = `tunnel-${i}`;
+    
+    // Check if tunnel is running in tmux (for token-based tunnels)
+    let isRunningInTmux = false;
+    try {
+      const { execSync } = require('child_process');
+      const tmuxList = execSync('tmux list-sessions 2>/dev/null', { encoding: 'utf8', stdio: 'pipe' });
+      isRunningInTmux = tmuxList.includes(tmuxSessionName);
+    } catch (e) {
+      // tmux not available or session doesn't exist
+    }
+    
+    const isRunning = !!processInfo || isRunningInTmux;
     const tunnelUrl = processInfo?.url || tunnel.url;
     const tunnelStats = analytics[tunnelUrl] || { count: 0, firstAccess: null, lastAccess: null };
     
@@ -645,13 +657,23 @@ app.post('/api/tunnels/:index/start', requireAuth, (req, res) => {
   
   const tunnel = tunnels[index];
   
-  // Check if already running (by index)
-  if (tunnelProcesses.has(index)) {
+  // Check if already running (by index or in tmux)
+  const tmuxSessionName = `tunnel-${index}`;
+  let isRunningInTmux = false;
+  try {
+    const { execSync } = require('child_process');
+    const tmuxList = execSync('tmux list-sessions 2>/dev/null', { encoding: 'utf8', stdio: 'pipe' });
+    isRunningInTmux = tmuxList.includes(tmuxSessionName);
+  } catch (e) {
+    // tmux not available
+  }
+  
+  if (tunnelProcesses.has(index) || isRunningInTmux) {
     const processInfo = tunnelProcesses.get(index);
     return res.json({ 
       success: true, 
       message: 'Tunnel is already running',
-      url: processInfo.url || tunnel.url,
+      url: processInfo?.url || tunnel.url,
       processRunning: true
     });
   }
@@ -680,15 +702,83 @@ app.post('/api/tunnels/:index/start', requireAuth, (req, res) => {
   if (hasToken) {
     // Use token-based tunnel for maximum persistence
     console.log(`[TUNNEL ${tunnel.name}] Using token-based tunnel (persistent URL)`);
-    // For token tunnels, we need to configure the route in Cloudflare Dashboard
-    // The route should point to http://localhost:${tunnelPort}
-    cloudflaredCmd = spawn('cloudflared', ['tunnel', '--no-autoupdate', 'run', '--token', tunnel.tunnelToken], {
-      cwd: __dirname,
-      stdio: ['ignore', 'pipe', 'pipe'],
-      detached: true  // Detach process so it survives parent process issues
-    });
-    cloudflaredCmd.unref(); // Allow parent to exit independently
-    const useNamedTunnel = true; // Token tunnels are persistent like named tunnels
+    console.log(`[TUNNEL ${tunnel.name}] Starting tunnel in tmux session for 24/7 operation...`);
+    
+    // Start tunnel in a separate tmux session for persistence
+    const tmuxSessionName = `tunnel-${index}`;
+    const { execSync } = require('child_process');
+    
+    try {
+      // Kill existing tmux session if it exists
+      try {
+        execSync(`tmux kill-session -t ${tmuxSessionName} 2>/dev/null`, { stdio: 'ignore' });
+      } catch (e) {
+        // Session doesn't exist, that's fine
+      }
+      
+      // Create new tmux session and start cloudflared in it
+      // Use send-keys to properly escape the command
+      execSync(`tmux new-session -d -s ${tmuxSessionName}`, {
+        cwd: __dirname,
+        stdio: 'ignore'
+      });
+      // Send the cloudflared command to tmux session
+      const tokenEscaped = tunnel.tunnelToken.replace(/"/g, '\\"');
+      execSync(`tmux send-keys -t ${tmuxSessionName} 'cloudflared tunnel --no-autoupdate run --token ${tokenEscaped}' Enter`, {
+        cwd: __dirname,
+        stdio: 'ignore',
+        shell: '/bin/bash'
+      });
+      
+      console.log(`[TUNNEL ${tunnel.name}] ✅ Started in tmux session: ${tmuxSessionName}`);
+      console.log(`[TUNNEL ${tunnel.name}] ⚠️ IMPORTANT: Wait 10-15 seconds for tunnel to connect, then configure route:`);
+      console.log(`[TUNNEL ${tunnel.name}]    1. Go to Cloudflare Dashboard → Networks → Tunnels → Your Tunnel → Configure`);
+      console.log(`[TUNNEL ${tunnel.name}]    2. Add Public Hostname`);
+      console.log(`[TUNNEL ${tunnel.name}]    3. Service Type: HTTP (not HTTPS)`);
+      console.log(`[TUNNEL ${tunnel.name}]    4. Service URL: http://localhost:${tunnelPort}`);
+      console.log(`[TUNNEL ${tunnel.name}]    5. Note: Cloudflare may show "service URL is not valid" - IGNORE THIS if tunnel is running!`);
+      console.log(`[TUNNEL ${tunnel.name}]       The route will work once cloudflared connects (check tmux session to verify)`);
+      
+      // Create a mock process object for tracking
+      cloudflaredCmd = {
+        pid: 0, // We can't track the PID easily with tmux, but that's okay
+        killed: false,
+        kill: () => {
+          try {
+            execSync(`tmux kill-session -t ${tmuxSessionName}`, { stdio: 'ignore' });
+          } catch (e) {
+            // Session already dead
+          }
+        }
+      };
+      
+      // Mark tunnel as running in our tracking
+      tunnelProcesses.set(index, {
+        process: cloudflaredCmd,
+        url: tunnel.url || '',
+        name: tunnel.name
+      });
+      
+      const useNamedTunnel = true; // Token tunnels are persistent like named tunnels
+      
+      // Return success immediately since tunnel is starting in tmux
+      return res.json({
+        success: true,
+        message: `Tunnel started in tmux session: ${tmuxSessionName}. Wait 10-15 seconds, then configure route in Cloudflare Dashboard with Service URL: http://localhost:${tunnelPort}`,
+        port: tunnelPort,
+        tmuxSession: tmuxSessionName,
+        serviceUrl: `http://localhost:${tunnelPort}`
+      });
+    } catch (error) {
+      console.error(`[TUNNEL ${tunnel.name}] ❌ Failed to start in tmux: ${error.message}`);
+      // Fallback to regular spawn
+      cloudflaredCmd = spawn('cloudflared', ['tunnel', '--no-autoupdate', 'run', '--token', tunnel.tunnelToken], {
+        cwd: __dirname,
+        stdio: ['ignore', 'pipe', 'pipe'],
+        detached: true
+      });
+      cloudflaredCmd.unref();
+    }
   } else if (useNamedTunnel) {
     // Use named tunnel for persistent URL
     console.log(`[TUNNEL ${tunnel.name}] Using named tunnel: ${tunnel.tunnelName}`);
@@ -1082,6 +1172,7 @@ app.post('/api/tunnels/:index/start', requireAuth, (req, res) => {
 
 // Stop tunnel process
 app.post('/api/tunnels/:index/stop', requireAuth, (req, res) => {
+  const { execSync } = require('child_process');
   const index = parseInt(req.params.index);
   const tunnels = getTunnels();
   
@@ -1090,7 +1181,21 @@ app.post('/api/tunnels/:index/stop', requireAuth, (req, res) => {
   }
   
   const tunnel = tunnels[index];
+  const tmuxSessionName = `tunnel-${index}`;
   const processInfo = tunnelProcesses.get(index);
+  
+  // Try to stop tmux session first (for token-based tunnels running in tmux)
+  try {
+    execSync(`tmux kill-session -t ${tmuxSessionName} 2>/dev/null`, { stdio: 'ignore' });
+    console.log(`[TUNNEL ${tunnel.name}] Stopped tmux session: ${tmuxSessionName}`);
+    tunnelProcesses.delete(index);
+    return res.json({ 
+      success: true, 
+      message: 'Tunnel stopped successfully' 
+    });
+  } catch (e) {
+    // Session doesn't exist, continue with regular process kill
+  }
   
   if (!processInfo) {
     return res.json({ 

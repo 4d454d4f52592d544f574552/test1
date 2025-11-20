@@ -841,7 +841,13 @@
               <strong>Redirects to:</strong> <span style="color: ${tunnel.redirectUrl ? '#28a745' : '#dc3545'}">${escapeHtml(tunnel.redirectUrl || 'Not configured')}</span>
             </div>
             ${tunnel.port && tunnel.hasToken ? `<div style="font-size: 11px; color: #856404; margin-top: 5px; background: #fff3cd; padding: 8px; border-radius: 4px; border-left: 3px solid #ffc107;">
-              <strong>⚠️ Cloudflare Config:</strong> In Cloudflare Dashboard, add route: Service URL = <code style="background: white; padding: 2px 4px; border-radius: 2px;">http://localhost:${tunnel.port}</code> (NOT the public IP!)
+              <strong>⚠️ Cloudflare Config Steps:</strong><br>
+              1. <strong>FIRST:</strong> Click "Start" button above to start the tunnel<br>
+              2. Wait 10 seconds for tunnel to connect<br>
+              3. Then in Cloudflare Dashboard → Networks → Tunnels → Your Tunnel → Configure → Add Public Hostname<br>
+              4. Service Type: <strong>HTTP</strong> (not HTTPS)<br>
+              5. Service URL: <code style="background: white; padding: 2px 4px; border-radius: 2px;">http://localhost:${tunnel.port}</code> (NOT the public IP!)<br>
+              6. <strong>Note:</strong> Cloudflare may show "service URL is not valid" - this is OK if tunnel is running! The route will work once cloudflared connects.
             </div>` : ''}
             ${tunnel.notes ? `<div style="font-size: 11px; color: #856404; margin-top: 5px; font-style: italic; background: #fff3cd; padding: 8px; border-radius: 4px;">📝 ${escapeHtml(tunnel.notes)}</div>` : ''}
             <div style="font-size: 11px; color: #667eea; margin-top: 8px; font-weight: 600;">
