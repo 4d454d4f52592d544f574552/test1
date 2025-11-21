@@ -837,8 +837,8 @@
               ${tunnel.port ? `<span style="font-size: 11px; color: #856404; margin-left: 8px;">Service URL: http://localhost:${tunnel.port}</span>` : ''}
             </div>
             <div style="font-size: 12px; color: #666; word-break: break-all; margin-top: 5px;">
-              <strong>URL:</strong> <a href="${escapeHtml(tunnel.url)}" target="_blank" style="color: #667eea; text-decoration: none;">${escapeHtml(tunnel.url)}</a>
-              <button onclick="copyToClipboard('${escapeHtml(tunnel.url)}')" style="margin-left: 8px; padding: 2px 8px; font-size: 10px; background: #f8f9fa; border: 1px solid #ddd; border-radius: 3px; cursor: pointer; color: #666;">📋 Copy</button>
+              <strong>URL:</strong> ${tunnel.url && tunnel.url.trim() && !tunnel.url.includes('placeholder') ? `<a href="${escapeHtml(tunnel.url.startsWith('http') ? tunnel.url : 'https://' + tunnel.url)}" target="_blank" style="color: #667eea; text-decoration: none;">${escapeHtml(tunnel.url)}</a>` : `<span style="color: #dc3545;">${escapeHtml(tunnel.url || 'Not set - configure route in Cloudflare Dashboard')}</span>`}
+              ${tunnel.url && tunnel.url.trim() && !tunnel.url.includes('placeholder') ? `<button onclick="copyToClipboard('${escapeHtml(tunnel.url)}')" style="margin-left: 8px; padding: 2px 8px; font-size: 10px; background: #f8f9fa; border: 1px solid #ddd; border-radius: 3px; cursor: pointer; color: #666;">📋 Copy</button>` : ''}
             </div>
             <div style="font-size: 12px; color: #666; margin-top: 5px; word-break: break-all;">
               <strong>Redirects to:</strong> <span style="color: ${tunnel.redirectUrl ? '#28a745' : '#dc3545'}">${escapeHtml(tunnel.redirectUrl || 'Not configured')}</span>
@@ -985,8 +985,13 @@
               <p style="font-size: 11px; color: #666; margin-top: 5px;">Get from Cloudflare Dashboard → Networks → Tunnels</p>
             </div>
             <div class="form-group">
-              <label for="editTunnelUrl">Tunnel URL</label>
-              <input type="text" id="editTunnelUrl" value="${escapeHtml(tunnelToEdit.url)}" placeholder="https://example.trycloudflare.com" style="width: 100%; padding: 12px; border: 1px solid #ddd; border-radius: 4px; font-size: 14px;" />
+              <label for="editTunnelUrl">Tunnel URL (Cloudflare Domain)</label>
+              <input type="text" id="editTunnelUrl" value="${escapeHtml(tunnelToEdit.url || '')}" placeholder="https://reddit-redirect.stratus-labs.org" style="width: 100%; padding: 12px; border: 1px solid #ddd; border-radius: 4px; font-size: 14px;" />
+              <p style="font-size: 11px; color: #666; margin-top: 5px;">
+                <strong>Enter the Cloudflare domain URL</strong> (e.g., <code>https://reddit-redirect.stratus-labs.org</code>).<br>
+                This is the URL you configured in Cloudflare Dashboard → Networks → Tunnels → Your Tunnel → Configure.<br>
+                <strong style="color: #dc3545;">Do NOT enter the port or localhost URL here!</strong>
+              </p>
             </div>
             <div class="form-group">
               <label for="editRedirectUrl">Redirect URL</label>

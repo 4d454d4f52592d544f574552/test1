@@ -749,14 +749,29 @@ ingress:
         stdio: 'ignore'
       });
       
-      // For token-based tunnels, we still use --token, but can reference config for ingress
-      // Actually, token-based tunnels get routes from dashboard, so we'll use token method
-      const tokenEscaped = tunnel.tunnelToken.replace(/"/g, '\\"');
-      execSync(`tmux send-keys -t ${tmuxSessionName} 'cloudflared tunnel --no-autoupdate run --token ${tokenEscaped}' Enter`, {
+      // For token-based tunnels, use --token to run the tunnel
+      // Escape the token properly for shell command
+      const tokenEscaped = tunnel.tunnelToken.replace(/'/g, "'\\''").replace(/"/g, '\\"');
+      
+      // Send the cloudflared command to tmux session
+      // Use single quotes to properly handle the token
+      const cloudflaredCommand = `cloudflared tunnel --no-autoupdate run --token '${tokenEscaped}'`;
+      execSync(`tmux send-keys -t ${tmuxSessionName} "${cloudflaredCommand}" Enter`, {
         cwd: __dirname,
-        stdio: 'ignore',
+        stdio: 'pipe',
         shell: '/bin/bash'
       });
+      
+      // Wait a moment for the command to execute
+      setTimeout(() => {
+        // Verify the command was sent
+        try {
+          const sessionInfo = execSync(`tmux capture-pane -t ${tmuxSessionName} -p`, { encoding: 'utf8', stdio: 'pipe' });
+          console.log(`[TUNNEL ${tunnel.name}] Tmux session output:`, sessionInfo.substring(0, 200));
+        } catch (e) {
+          console.log(`[TUNNEL ${tunnel.name}] Could not read tmux output:`, e.message);
+        }
+      }, 1000);
       
       console.log(`[TUNNEL ${tunnel.name}] ✅ Started in tmux session: ${tmuxSessionName}`);
       console.log(`[TUNNEL ${tunnel.name}] ⚠️ IMPORTANT: Wait 10-15 seconds for tunnel to connect, then configure route:`);
@@ -799,13 +814,45 @@ ingress:
       });
     } catch (error) {
       console.error(`[TUNNEL ${tunnel.name}] ❌ Failed to start in tmux: ${error.message}`);
-      // Fallback to regular spawn
-      cloudflaredCmd = spawn('cloudflared', ['tunnel', '--no-autoupdate', 'run', '--token', tunnel.tunnelToken], {
-        cwd: __dirname,
-        stdio: ['ignore', 'pipe', 'pipe'],
-        detached: true
-      });
-      cloudflaredCmd.unref();
+      console.error(`[TUNNEL ${tunnel.name}] Error stack:`, error.stack);
+      
+      // Try alternative method: write command to a script and execute it
+      try {
+        const fs = require('fs');
+        const path = require('path');
+        const scriptPath = path.join(__dirname, `.cloudflared`, `start-tunnel-${index}.sh`);
+        const scriptDir = path.dirname(scriptPath);
+        
+        if (!fs.existsSync(scriptDir)) {
+          fs.mkdirSync(scriptDir, { recursive: true });
+        }
+        
+        // Create a startup script
+        const scriptContent = `#!/bin/bash
+cd ${__dirname}
+cloudflared tunnel --no-autoupdate run --token '${tunnel.tunnelToken}'
+`;
+        fs.writeFileSync(scriptPath, scriptContent, { mode: 0o755 });
+        
+        // Execute in tmux
+        execSync(`tmux send-keys -t ${tmuxSessionName} 'bash ${scriptPath}' Enter`, {
+          cwd: __dirname,
+          stdio: 'pipe',
+          shell: '/bin/bash'
+        });
+        
+        console.log(`[TUNNEL ${tunnel.name}] ✅ Started via script in tmux session: ${tmuxSessionName}`);
+      } catch (scriptError) {
+        console.error(`[TUNNEL ${tunnel.name}] ❌ Failed to start via script: ${scriptError.message}`);
+        // Final fallback to regular spawn
+        cloudflaredCmd = spawn('cloudflared', ['tunnel', '--no-autoupdate', 'run', '--token', tunnel.tunnelToken], {
+          cwd: __dirname,
+          stdio: ['ignore', 'pipe', 'pipe'],
+          detached: true
+        });
+        cloudflaredCmd.unref();
+        console.log(`[TUNNEL ${tunnel.name}] ⚠️ Using fallback spawn method (not in tmux)`);
+      }
     }
   } else if (useNamedTunnel) {
     // Use named tunnel for persistent URL
@@ -1456,7 +1503,34 @@ app.put('/api/tunnels/:index', requireAuth, (req, res) => {
     }
   }
   
-  // redirectUrl is handled above
+  // Update redirectUrl if provided
+  if (redirectUrl !== undefined) {
+    tunnels[index].redirectUrl = redirectUrl;
+    console.log(`[TUNNEL ${tunnels[index].name}] Redirect URL updated to: ${redirectUrl}`);
+    
+    // Update the running tunnel server if it exists
+    const tunnelPort = tunnels[index].port || 3000;
+    if (tunnelServers.has(tunnelPort)) {
+      const serverInfo = tunnelServers.get(tunnelPort);
+      // Restart the server with new redirect URL
+      try {
+        // Close old server
+        if (serverInfo.server) {
+          serverInfo.server.close(() => {
+            console.log(`[TUNNEL ${tunnels[index].name}] Closed old server on port ${tunnelPort}`);
+          });
+        }
+        
+        // Create new server with updated redirect URL
+        const newServer = createTunnelServer(index, tunnelPort, redirectUrl);
+        tunnelServers.set(tunnelPort, { server: newServer, tunnelIndex: index });
+        console.log(`[TUNNEL ${tunnels[index].name}] ✅ Updated server on port ${tunnelPort} with new redirect URL: ${redirectUrl}`);
+      } catch (error) {
+        console.error(`[TUNNEL ${tunnels[index].name}] ❌ Failed to update server: ${error.message}`);
+      }
+    }
+  }
+  
   if (clientName !== undefined) tunnels[index].clientName = clientName;
   if (notes !== undefined) tunnels[index].notes = notes;
   if (tunnelToken !== undefined) tunnels[index].tunnelToken = tunnelToken;
